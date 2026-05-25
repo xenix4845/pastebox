@@ -155,6 +155,17 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	url := strings.TrimRight(requestBaseURL(r), "/") + "/" + meta.ID
 
+	log.Printf(
+		"created: id=%s remote=%s size=%d content_type=%q policy=%s expires=%s protected=%t",
+		meta.ID,
+		r.RemoteAddr,
+		meta.Size,
+		meta.ContentType,
+		meta.DataPolicy,
+		formatExpiresForLog(meta),
+		password != "",
+	)
+
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
 	fmt.Fprintf(w, "url: %s\n", url)
@@ -341,6 +352,14 @@ func requestBaseURL(r *http.Request) string {
 	}
 
 	return scheme + "://" + host
+}
+
+func formatExpiresForLog(meta pastebox.Metadata) string {
+	if strings.EqualFold(meta.DataPolicy, "permanent") || meta.ExpiresAt.IsZero() {
+		return "-"
+	}
+
+	return meta.ExpiresAt.Format(time.RFC3339)
 }
 
 func getenv(key string, fallback string) string {
