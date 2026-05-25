@@ -39,6 +39,21 @@ English | [Korean](./README_ko.md)
    ```
 
 4. **Permanent Storage**: Supports permanent file storage using the `data-policy: permanent` header.
+   ```
+   curl -H "data-policy: permanent" -F "file=@test.txt" http://localhost:8080/
+   ```
+   ```json
+   // Path : ./data/code.json
+
+   {
+     "id": "code",
+     "created_at": "2026-05-25T06:46:51.108540924Z",
+     "expires_at": "0001-01-01T00:00:00Z",
+     "data_policy": "permanent",
+     "size": 5,
+     "content_type": "application/octet-stream"
+   }
+   ```
 
 5. **Password-Protected Links**: Supports private upload links using the `usepassword: true` header.
 
