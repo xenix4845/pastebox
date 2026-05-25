@@ -10,9 +10,9 @@ curl 기반 파일 공유 서비스
 |--------|------|
 | OS | Alpine Linux 3.23.4 (미러: https://mirror5.krfoss.org/alpine) |
 | 언어 | Go |
-| 프론트엔드 | Go HTML Template |
+| 프론트엔드 | Go HTML 템플릿 |
 | 백엔드 | Go 표준 라이브러리 기반 HTTP 서버 |
-| 저장소 | Local File Storage |
+| 저장소 | 로컬 파일 저장소 |
 | 컨테이너 | Docker + Docker Compose |
 
 *사용하고 싶은 Alpine 미러가 따로 있다면 Dockerfile에서 수정할 수 있습니다.*
