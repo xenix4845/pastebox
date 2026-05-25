@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pastebox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' }
+  </script>
+</head>
+<body class="dark min-h-screen bg-[#111111] text-zinc-100">
+  <main class="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-12">
+    <section class="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-8 shadow-2xl">
+      <div class="mb-8">
+        <p class="mb-3 inline-flex rounded-full border border-zinc-800 px-3 py-1 text-xs text-zinc-400">curl-based file sharing</p>
+        <h1 class="text-4xl font-bold tracking-tight">Pastebox</h1>
+        <p class="mt-3 text-zinc-400">When you upload a file or text using curl, a 5-digit random URL is generated. The link will be automatically deleted after 30 days.</p>
+      </div>
+
+      <div class="space-y-4">
+        <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
+          <p class="mb-2 text-sm text-zinc-400">Text Upload</p>
+          <pre class="overflow-x-auto text-sm"><code>echo "hello" | curl -X POST --data-binary @- {{ .BaseURL }}/</code></pre>
+        </div>
+        <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
+          <p class="mb-2 text-sm text-zinc-400">File Upload</p>
+          <pre class="overflow-x-auto text-sm"><code>curl -F "file=@test.txt" {{ .BaseURL }}/</code></pre>
+        </div>
+        <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
+          <p class="mb-2 text-sm text-zinc-400">Password-protected Links</p>
+          <pre class="overflow-x-auto text-sm"><code>curl -H "usepassword: true" -F "file=@secret.txt" {{ .BaseURL }}/</code></pre>
+        </div>
+        <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
+          <p class="mb-2 text-sm text-zinc-400">Save permanently</p>
+          <pre class="overflow-x-auto text-sm"><code>curl -H "data-policy: permanent" -F "file=@server-logs.log" {{ .BaseURL }}/</code></pre>
+        </div>
+      </div>
+
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a class="rounded-xl bg-zinc-100 px-4 py-2 font-semibold text-zinc-950 transition hover:bg-white" href="/">Home</a>
+        <button class="rounded-xl border border-zinc-700 px-4 py-2 text-zinc-300 transition hover:border-zinc-500 hover:text-white" onclick="navigator.clipboard.writeText('curl -F &quot;file=@test.txt&quot; {{ .BaseURL }}/')">Copy curl example</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
