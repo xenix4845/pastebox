@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pastebox</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="text/javascript" nonce="996791a7b2574117b38495bff3e" src="//local.adguard.org?ts=1779694119554&amp;type=content-script&amp;dmn=chatgpt.com&amp;url=https%3A%2F%2Fchatgpt.com%2Fbackend-api%2Festuary%2Fcontent%3Fid%3Dfile_0000000021ac72068bb6bf9d386d7e7d%26ts%3D494359%26p%3Dfs%26cid%3D1%26sig%3D4f2bc848edd4407611e2d86bbbed8f3b5a88ce4a73d50c18de0330bd0bca2f3b%26v%3D0&amp;app=firefox&amp;css=2&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script><script type="text/javascript" nonce="996791a7b2574117b38495bff3e" src="//local.adguard.org?ts=1779694119554&amp;name=AdGuard%20Extra&amp;type=user-script"></script><script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = { darkMode: 'class' }
   </script>
@@ -34,6 +34,18 @@
         <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
           <p class="mb-2 text-sm text-zinc-400">Save permanently</p>
           <pre class="overflow-x-auto text-sm"><code>curl -H "data-policy: permanent" -F "file=@server-logs.log" {{ .BaseURL }}/</code></pre>
+        </div>
+        <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
+          <p class="mb-2 text-sm text-zinc-400">Expiration information</p>
+          <p class="mb-3 text-sm text-zinc-500">Temporary uploads include an expiration date in the upload response. Permanent uploads do not include an expiration date.</p>
+          <pre class="overflow-x-auto text-sm"><code>url: {{ .BaseURL }}/AbC12
+expires: 2026-06-24T05:10:26Z
+delete: {{ .BaseURL }}/AbC12?delete=DELETE_TOKEN</code></pre>
+        </div>
+        <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
+          <p class="mb-2 text-sm text-zinc-400">Manual deletion</p>
+          <p class="mb-3 text-sm text-zinc-500">Each upload returns a delete URL. Open the URL or request it with curl to remove the uploaded content manually.</p>
+          <pre class="overflow-x-auto text-sm"><code>curl "{{ .BaseURL }}/AbC12?delete=DELETE_TOKEN"</code></pre>
         </div>
       </div>
 
