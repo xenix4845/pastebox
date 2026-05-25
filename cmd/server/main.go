@@ -196,9 +196,6 @@ func (a *app) deleteHandler(w http.ResponseWriter, r *http.Request, id string, t
 func (a *app) viewHandler(w http.ResponseWriter, r *http.Request, id string) {
 	password := r.URL.Query().Get("password")
 	if password == "" {
-		password = r.URL.Query().Get("password")
-	}
-	if password == "" {
 		password = r.Header.Get("paste-password")
 	}
 

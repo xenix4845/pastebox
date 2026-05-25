@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,7 @@ var (
 type Store struct {
 	DataDir string
 	TTL     time.Duration
+	locks   *lockManager
 }
 
 type Metadata struct {
@@ -48,6 +50,7 @@ func NewStore(dataDir string, ttl time.Duration) (*Store, error) {
 	return &Store{
 		DataDir: dataDir,
 		TTL:     ttl,
+		locks:   newLockManager(),
 	}, nil
 }
 
@@ -56,6 +59,9 @@ func (s *Store) Create(r io.Reader, contentType string, usePassword bool, perman
 	if err != nil {
 		return Metadata{}, "", "", err
 	}
+
+	unlock := s.locks.Lock(id)
+	defer unlock()
 
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
@@ -127,6 +133,9 @@ func (s *Store) Open(id string, password string) (*Entry, error) {
 		return nil, ErrNotFound
 	}
 
+	unlock := s.locks.Lock(id)
+	defer unlock()
+
 	path := s.path(id)
 
 	meta, err := s.readMetadata(id)
@@ -166,6 +175,9 @@ func (s *Store) Delete(id string, token string) error {
 	if token == "" {
 		return ErrInvalidDeleteToken
 	}
+
+	unlock := s.locks.Lock(id)
+	defer unlock()
 
 	path := s.path(id)
 
@@ -215,16 +227,16 @@ func (s *Store) CleanupExpired() error {
 			continue
 		}
 
-		meta, err := s.readMetadata(name)
-		if err != nil {
-			continue
-		}
+		unlock := s.locks.Lock(name)
 
-		if isExpired(meta, now) {
+		meta, err := s.readMetadata(name)
+		if err == nil && isExpired(meta, now) {
 			path := s.path(name)
 			_ = os.Remove(path)
 			_ = os.Remove(metaPath(path))
 		}
+
+		unlock()
 	}
 
 	return nil
@@ -427,6 +439,48 @@ func shuffleBytes(data []byte) error {
 	}
 
 	return nil
+}
+
+type lockManager struct {
+	mu    sync.Mutex
+	locks map[string]*refLock
+}
+
+type refLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func newLockManager() *lockManager {
+	return &lockManager{
+		locks: make(map[string]*refLock),
+	}
+}
+
+func (lm *lockManager) Lock(key string) func() {
+	lm.mu.Lock()
+
+	lock := lm.locks[key]
+	if lock == nil {
+		lock = &refLock{}
+		lm.locks[key] = lock
+	}
+
+	lock.refs++
+	lm.mu.Unlock()
+
+	lock.mu.Lock()
+
+	return func() {
+		lock.mu.Unlock()
+
+		lm.mu.Lock()
+		lock.refs--
+		if lock.refs == 0 {
+			delete(lm.locks, key)
+		}
+		lm.mu.Unlock()
+	}
 }
 
 const idAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
