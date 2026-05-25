@@ -35,8 +35,23 @@ curl 기반 파일 공유 서비스
    ```
 
 4. **영구 저장**: `data-policy: permanent` 헤더를 사용한 영구 저장 지원
+   ```
+   curl -H "data-policy: permanent" -F "file=@test.txt" http://localhost:8080/
+   ```
+   ```json
+   // 저장경로 : ./data/코드.json
 
-5. **비밀번호 링크**: `usepassword: true` 헤더를 사용한 비공개 업로드 링크생성 지원 (헤더 사용시 **영문(대+소문자) + 숫자 + 특수문자** 조합으로 생성된 8자리 비밀번호 발급 및 `?password=...` 혹은 `paste-password: ...` 헤더로 접근 가능)
+   {
+     "id": "code",
+     "created_at": "2026-05-25T06:46:51.108540924Z",
+     "expires_at": "0001-01-01T00:00:00Z",
+     "data_policy": "permanent",
+     "size": 5,
+     "content_type": "application/octet-stream"
+   }
+   ```
+   
+6. **비밀번호 링크**: `usepassword: true` 헤더를 사용한 비공개 업로드 링크생성 지원 (헤더 사용시 **영문(대+소문자) + 숫자 + 특수문자** 조합으로 생성된 8자리 비밀번호 발급 및 `?password=...` 혹은 `paste-password: ...` 헤더로 접근 가능)
    ```
    # 비밀번호 링크 생성:
    curl -H "usepassword: true" -F "file=@secret.txt" http://localhost:8080/
