@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+
 FROM alpine:3.23.4 AS builder
 
 RUN printf '%s\n' \
@@ -10,9 +11,13 @@ RUN printf '%s\n' \
   && apk add --no-cache go ca-certificates tzdata
 
 WORKDIR /src
+
 COPY go.mod ./
+RUN go mod download
+
 COPY cmd ./cmd
 COPY internal ./internal
+
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/pastebox ./cmd/server
 
 FROM alpine:3.23.4
@@ -25,19 +30,21 @@ RUN printf '%s\n' \
   && apk upgrade --no-cache \
   && apk add --no-cache ca-certificates tzdata su-exec \
   && addgroup -S pastebox \
-  && adduser -S -G pastebox -h /app pastebox \
-  && mkdir -p /paste-data /app/templates \
-  && chown -R pastebox:pastebox /paste-data /app
+  && adduser -S -G pastebox pastebox
 
 WORKDIR /app
-COPY --from=builder /out/pastebox /app/pastebox
+
+COPY --from=builder /out/pastebox /usr/local/bin/pastebox
 COPY templates ./templates
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+ENV LISTEN_ADDR=:8080
+ENV DATA_DIR=/paste-data
+ENV EXPIRE_DAYS=30
+
 EXPOSE 8080
-ENV DATA_DIR=/paste-data \
-    LISTEN_ADDR=:8080
-VOLUME ["/paste-data"]
+
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/app/pastebox"]
+CMD ["/usr/local/bin/pastebox"]
