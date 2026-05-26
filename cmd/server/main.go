@@ -323,6 +323,7 @@ func (a *app) adminIndexHandler(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{
 		"Items":   items,
+		"Stats":   buildAdminStats(items),
 		"BaseURL": requestBaseURL(r),
 	}
 
@@ -330,6 +331,66 @@ func (a *app) adminIndexHandler(w http.ResponseWriter, r *http.Request) {
 	if err := adminListHTML.Execute(w, data); err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
+}
+
+type adminStats struct {
+	Total          int
+	Temporary      int
+	Permanent      int
+	Protected      int
+	Expiring24h    int
+	Expired        int
+	TotalSizeBytes int64
+	TotalSize      string
+}
+
+func buildAdminStats(items []pastebox.AdminPasteItem) adminStats {
+	now := time.Now().UTC()
+	stats := adminStats{
+		Total: len(items),
+	}
+
+	for _, item := range items {
+		stats.TotalSizeBytes += item.Size
+
+		if strings.EqualFold(item.DataPolicy, "permanent") {
+			stats.Permanent++
+		} else {
+			stats.Temporary++
+		}
+
+		if item.Protected {
+			stats.Protected++
+		}
+
+		if !item.ExpiresAt.IsZero() {
+			if now.After(item.ExpiresAt) {
+				stats.Expired++
+			} else if item.ExpiresAt.Sub(now) <= 24*time.Hour {
+				stats.Expiring24h++
+			}
+		}
+	}
+
+	stats.TotalSize = formatBytes(stats.TotalSizeBytes)
+	return stats
+}
+
+func formatBytes(size int64) string {
+	const unit = 1024
+
+	if size < unit {
+		return fmt.Sprintf("%d B", size)
+	}
+
+	div := int64(unit)
+	exp := 0
+	for n := size / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+
+	return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
 func (a *app) adminSetupHandler(w http.ResponseWriter, r *http.Request) {
@@ -932,6 +993,42 @@ var adminListHTML = template.Must(template.New("admin-list").Parse(`<!doctype ht
         <div class="flex gap-3">
           <a class="rounded-xl border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/20 hover:text-white" href="/">Home</a>
           <a class="rounded-xl border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/20 hover:text-white" href="/admin/logout">Logout</a>
+        </div>
+      </div>
+
+      <div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="rounded-2xl border border-white/10 bg-black/25 p-5 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_0_24px_rgba(255,255,255,0.05)]">
+          <p class="text-xs uppercase tracking-[0.18em] text-zinc-500">Total Links</p>
+          <p class="mt-3 text-3xl font-bold text-white">{{ .Stats.Total }}</p>
+          <p class="mt-1 text-sm text-zinc-500">stored pastes</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-black/25 p-5 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_0_24px_rgba(255,255,255,0.05)]">
+          <p class="text-xs uppercase tracking-[0.18em] text-zinc-500">Storage</p>
+          <p class="mt-3 text-3xl font-bold text-white">{{ .Stats.TotalSize }}</p>
+          <p class="mt-1 text-sm text-zinc-500">total size</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-black/25 p-5 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_0_24px_rgba(255,255,255,0.05)]">
+          <p class="text-xs uppercase tracking-[0.18em] text-zinc-500">Policy</p>
+          <p class="mt-3 text-3xl font-bold text-white">{{ .Stats.Temporary }} / {{ .Stats.Permanent }}</p>
+          <p class="mt-1 text-sm text-zinc-500">temporary / permanent</p>
+        </div>
+        <div class="rounded-2xl border border-white/10 bg-black/25 p-5 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_0_24px_rgba(255,255,255,0.05)]">
+          <p class="text-xs uppercase tracking-[0.18em] text-zinc-500">Security</p>
+          <p class="mt-3 text-3xl font-bold text-white">{{ .Stats.Protected }}</p>
+          <p class="mt-1 text-sm text-zinc-500">password-protected</p>
+        </div>
+      </div>
+
+      <div class="mb-8 grid gap-4 sm:grid-cols-2">
+        <div class="rounded-2xl border border-yellow-400/10 bg-yellow-500/[0.04] p-5">
+          <p class="text-xs uppercase tracking-[0.18em] text-yellow-200/60">Expiring Soon</p>
+          <p class="mt-3 text-2xl font-bold text-yellow-100">{{ .Stats.Expiring24h }}</p>
+          <p class="mt-1 text-sm text-yellow-100/50">temporary links expiring within 24 hours</p>
+        </div>
+        <div class="rounded-2xl border border-red-400/10 bg-red-500/[0.04] p-5">
+          <p class="text-xs uppercase tracking-[0.18em] text-red-200/60">Expired</p>
+          <p class="mt-3 text-2xl font-bold text-red-100">{{ .Stats.Expired }}</p>
+          <p class="mt-1 text-sm text-red-100/50">links waiting for cleanup</p>
         </div>
       </div>
 
