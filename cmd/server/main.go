@@ -117,6 +117,7 @@ func (a *app) indexHandler(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	var reader io.Reader
+	var filename string
 	contentType := r.Header.Get("Content-Type")
 
 	if strings.HasPrefix(strings.ToLower(contentType), "multipart/form-data") {
@@ -135,6 +136,7 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		reader = file
 
 		if header != nil {
+			filename = header.Filename
 			if detected := mime.TypeByExtension(strings.ToLower(filepath.Ext(header.Filename))); detected != "" {
 				contentType = detected
 			} else {
@@ -148,10 +150,25 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		http.Error(w, "failed to read upload", http.StatusBadRequest)
+		return
+	}
+
+	allowed, reason := allowTextUpload(filename, contentType, content)
+	if !allowed {
+		log.Printf("upload blocked: remote=%s filename=%q content_type=%q reason=%s", r.RemoteAddr, filename, contentType, reason)
+		http.Error(w, "unsupported file type. only text-based files are allowed", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	contentType = normalizeTextContentType(filename, contentType)
+
 	usePassword := strings.EqualFold(strings.TrimSpace(r.Header.Get("usepassword")), "true")
 	permanent := strings.EqualFold(strings.TrimSpace(r.Header.Get("data-policy")), "permanent")
 
-	meta, password, deleteToken, err := a.store.Create(reader, contentType, usePassword, permanent)
+	meta, password, deleteToken, err := a.store.Create(bytes.NewReader(content), contentType, usePassword, permanent)
 	if err != nil {
 		log.Printf("upload failed: %v", err)
 		http.Error(w, "upload failed", http.StatusInternalServerError)
@@ -496,6 +513,176 @@ func setAdminCookie(w http.ResponseWriter, token string) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func allowTextUpload(filename string, contentType string, content []byte) (bool, string) {
+	ext := normalizedUploadExt(filename)
+	lowerContentType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+
+	if isBlockedUploadExtension(ext) {
+		return false, "blocked extension"
+	}
+
+	if isBlockedUploadContentType(lowerContentType) {
+		return false, "blocked content type"
+	}
+
+	if isKnownTextExtension(ext) {
+		if looksLikeText(content) {
+			return true, ""
+		}
+		return false, "text extension but binary content"
+	}
+
+	if isTextContentType(lowerContentType) {
+		if looksLikeText(content) {
+			return true, ""
+		}
+		return false, "text content type but binary content"
+	}
+
+	if looksLikeText(content) {
+		return true, ""
+	}
+
+	return false, "not text"
+}
+
+func normalizeTextContentType(filename string, contentType string) string {
+	ext := normalizedUploadExt(filename)
+	lowerContentType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+
+	if lowerContentType != "" && isTextContentType(lowerContentType) {
+		if strings.Contains(strings.ToLower(contentType), "charset=") {
+			return contentType
+		}
+		return lowerContentType + "; charset=utf-8"
+	}
+
+	switch ext {
+	case ".csv", ".tsv":
+		return "text/csv; charset=utf-8"
+	case ".md", ".markdown":
+		return "text/markdown; charset=utf-8"
+	case ".json", ".jsonl":
+		return "application/json; charset=utf-8"
+	case ".xml":
+		return "application/xml; charset=utf-8"
+	case ".yaml", ".yml":
+		return "application/yaml; charset=utf-8"
+	case ".html", ".htm":
+		return "text/html; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".js", ".mjs", ".cjs":
+		return "application/javascript; charset=utf-8"
+	case ".sh", ".bash", ".zsh":
+		return "text/x-shellscript; charset=utf-8"
+	default:
+		return "text/plain; charset=utf-8"
+	}
+}
+
+func normalizedUploadExt(filename string) string {
+	name := strings.ToLower(strings.TrimSpace(filename))
+	if name == "" {
+		return ""
+	}
+
+	if strings.HasSuffix(name, ".tar.gz") {
+		return ".tar.gz"
+	}
+	if strings.HasSuffix(name, ".tar.xz") {
+		return ".tar.xz"
+	}
+	if strings.HasSuffix(name, ".tar.bz2") {
+		return ".tar.bz2"
+	}
+
+	return filepath.Ext(name)
+}
+
+func isKnownTextExtension(ext string) bool {
+	switch ext {
+	case "",
+		".txt", ".text", ".log", ".md", ".markdown", ".csv", ".tsv",
+		".json", ".jsonl", ".xml", ".yaml", ".yml", ".toml", ".ini", ".env",
+		".conf", ".cfg", ".properties", ".sql",
+		".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
+		".go", ".py", ".rb", ".php", ".java", ".kt", ".kts", ".c", ".h", ".cpp", ".hpp",
+		".rs", ".swift", ".cs", ".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat",
+		".dockerfile", ".gitignore", ".gitattributes", ".editorconfig":
+		return true
+	default:
+		return false
+	}
+}
+
+func isBlockedUploadExtension(ext string) bool {
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".bmp", ".svg", ".gif", ".webp", ".ico", ".tif", ".tiff",
+		".mp4", ".mp3", ".mpv", ".mkv", ".mov", ".avi", ".wmv", ".flv", ".webm", ".m4v",
+		".wav", ".flac", ".aac", ".ogg", ".m4a",
+		".iso", ".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2",
+		".gz", ".xz", ".bz2", ".7z", ".rar",
+		".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+		".exe", ".dll", ".so", ".dylib", ".bin", ".img", ".apk", ".deb", ".rpm":
+		return true
+	default:
+		return false
+	}
+}
+
+func isBlockedUploadContentType(contentType string) bool {
+	if contentType == "" {
+		return false
+	}
+
+	if strings.HasPrefix(contentType, "image/") ||
+		strings.HasPrefix(contentType, "video/") ||
+		strings.HasPrefix(contentType, "audio/") {
+		return true
+	}
+
+	switch contentType {
+	case "application/zip",
+		"application/x-zip-compressed",
+		"application/x-tar",
+		"application/gzip",
+		"application/x-gzip",
+		"application/x-7z-compressed",
+		"application/vnd.rar",
+		"application/x-rar-compressed",
+		"application/x-iso9660-image",
+		"application/pdf",
+		"application/octet-stream":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTextContentType(contentType string) bool {
+	if contentType == "" {
+		return false
+	}
+
+	if strings.HasPrefix(contentType, "text/") {
+		return true
+	}
+
+	if strings.Contains(contentType, "json") ||
+		strings.Contains(contentType, "xml") ||
+		strings.Contains(contentType, "yaml") ||
+		strings.Contains(contentType, "toml") ||
+		strings.Contains(contentType, "javascript") ||
+		strings.Contains(contentType, "ecmascript") ||
+		strings.Contains(contentType, "x-sh") ||
+		strings.Contains(contentType, "x-shellscript") {
+		return true
+	}
+
+	return false
 }
 
 func isBrowserRequest(r *http.Request) bool {
