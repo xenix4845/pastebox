@@ -17,6 +17,25 @@ curl 기반 파일 공유 서비스
 
 *사용하고 싶은 Alpine 미러가 따로 있다면 Dockerfile에서 수정할 수 있습니다.*
 
+### 디렉토리 구조
+```text
+pastebox/
+├── Dockerfile
+├── docker-compose.yml
+├── docker-entrypoint.sh
+├── go.mod
+├── README.md
+├── README_ko.md
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   ├── metadata.go
+│   └── store.go
+└── templates/
+    └── index.html
+```
+
 ### 어떻게 사용하나요?
 1. 저장소를 클론하거나 `.zip` 파일로 다운로드하세요.
 2. docker compose를 사용하여 빌드 후 실행하세요: `docker compose up -d --build`
@@ -128,22 +147,3 @@ curl 기반 파일 공유 서비스
 13. **세분화된 락 매니저**: 업로드 ID별로 락을 적용하여 같은 파일에 대한 조회, 삭제, 만료 정리 작업이 동시에 발생해도 충돌을 줄입니다. 서로 다른 파일은 병렬로 처리됩니다.
 
 14. **관리 페이지 제공**: IP, 도메인 뒤에 `/admin`을 추가하여 관리페이지 접근이 가능합니다. 계정이 없는 경우 첫 생성된 계정이 관리자로 들어가며 이후 신규생성이 중단됩니다. DB의 경우 `/paste-data/pastebox.db (호스트의 경우 ./data/pastebox.db)`에 기록되며 비밀번호의 경우 암호화되어 저장됩니다.
-
-### 디렉토리 구조
-```text
-pastebox/
-├── Dockerfile
-├── docker-compose.yml
-├── docker-entrypoint.sh
-├── go.mod
-├── README.md
-├── README_ko.md
-├── cmd/
-│   └── server/
-│       └── main.go
-├── internal/
-│   ├── metadata.go
-│   └── store.go
-└── templates/
-    └── index.html
-```
