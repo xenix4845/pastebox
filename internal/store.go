@@ -76,7 +76,7 @@ func NewStore(dataDir string, ttl time.Duration) (*Store, error) {
 	}, nil
 }
 
-func (s *Store) Create(r io.Reader, contentType string, usePassword bool, permanent bool) (Metadata, string, string, error) {
+func (s *Store) Create(r io.Reader, contentType string, usePassword bool, permanent bool, once bool) (Metadata, string, string, error) {
 	id, path, err := s.reservePath()
 	if err != nil {
 		return Metadata{}, "", "", err
@@ -123,6 +123,8 @@ func (s *Store) Create(r io.Reader, contentType string, usePassword bool, perman
 	if permanent {
 		dataPolicy = "permanent"
 		expiresAt = time.Time{}
+	} else if once {
+		dataPolicy = "once"
 	}
 
 	meta := Metadata{
@@ -172,6 +174,11 @@ func (s *Store) Open(id string, password string) (*Entry, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, ErrNotFound
+	}
+
+	if strings.EqualFold(meta.DataPolicy, "once") {
+		_ = os.Remove(path)
+		_ = os.Remove(metaPath(path))
 	}
 
 	return &Entry{

@@ -166,9 +166,11 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	contentType = normalizeTextContentType(filename, contentType)
 
 	usePassword := strings.EqualFold(strings.TrimSpace(r.Header.Get("usepassword")), "true")
-	permanent := strings.EqualFold(strings.TrimSpace(r.Header.Get("data-policy")), "permanent")
+	policy := strings.ToLower(strings.TrimSpace(r.Header.Get("data-policy")))
+	permanent := policy == "permanent"
+	once := policy == "once"
 
-	meta, password, deleteToken, err := a.store.Create(bytes.NewReader(content), contentType, usePassword, permanent)
+	meta, password, deleteToken, err := a.store.Create(bytes.NewReader(content), contentType, usePassword, permanent, once)
 	if err != nil {
 		log.Printf("upload failed: %v", err)
 		http.Error(w, "upload failed", http.StatusInternalServerError)
