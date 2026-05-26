@@ -67,6 +67,11 @@ func main() {
 }
 
 func (a *app) handle(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/admin") {
+		a.adminHandler(w, r)
+		return
+	}
+
 	if r.URL.Path == "/" {
 		switch r.Method {
 		case http.MethodGet:
@@ -260,6 +265,239 @@ func (a *app) viewHandler(w http.ResponseWriter, r *http.Request, id string) {
 	_, _ = io.Copy(w, entry.File)
 }
 
+func (a *app) adminHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/admin", "/admin/":
+		a.adminIndexHandler(w, r)
+	case "/admin/setup":
+		a.adminSetupHandler(w, r)
+	case "/admin/login":
+		a.adminLoginHandler(w, r)
+	case "/admin/logout":
+		a.adminLogoutHandler(w, r)
+	case "/admin/delete":
+		a.adminDeleteHandler(w, r)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (a *app) adminIndexHandler(w http.ResponseWriter, r *http.Request) {
+	exists, err := a.store.AdminExists()
+	if err != nil {
+		http.Error(w, "admin database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !exists {
+		http.Redirect(w, r, "/admin/setup", http.StatusSeeOther)
+		return
+	}
+
+	if !a.requireAdmin(w, r) {
+		return
+	}
+
+	items, err := a.store.ListPastes()
+	if err != nil {
+		http.Error(w, "failed to list pastes", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]any{
+		"Items":   items,
+		"BaseURL": requestBaseURL(r),
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := adminListHTML.Execute(w, data); err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
+func (a *app) adminSetupHandler(w http.ResponseWriter, r *http.Request) {
+	exists, err := a.store.AdminExists()
+	if err != nil {
+		http.Error(w, "admin database error", http.StatusInternalServerError)
+		return
+	}
+
+	if exists {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		a.renderAdminForm(w, "Create admin", "/admin/setup", "", "Create")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		a.renderAdminForm(w, "Create admin", "/admin/setup", "Invalid form", "Create")
+		return
+	}
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	if err := a.store.CreateAdmin(username, password); err != nil {
+		a.renderAdminForm(w, "Create admin", "/admin/setup", err.Error(), "Create")
+		return
+	}
+
+	log.Printf("admin created: username=%s remote=%s", username, r.RemoteAddr)
+
+	token, err := a.store.CreateAdminSession()
+	if err != nil {
+		http.Error(w, "failed to create session", http.StatusInternalServerError)
+		return
+	}
+
+	setAdminCookie(w, token)
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func (a *app) adminLoginHandler(w http.ResponseWriter, r *http.Request) {
+	exists, err := a.store.AdminExists()
+	if err != nil {
+		http.Error(w, "admin database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !exists {
+		http.Redirect(w, r, "/admin/setup", http.StatusSeeOther)
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		a.renderAdminForm(w, "Admin login", "/admin/login", "", "Login")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		a.renderAdminForm(w, "Admin login", "/admin/login", "Invalid form", "Login")
+		return
+	}
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	ok, err := a.store.AuthenticateAdmin(username, password)
+	if err != nil {
+		http.Error(w, "admin database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !ok {
+		log.Printf("admin login failed: username=%s remote=%s", username, r.RemoteAddr)
+		a.renderAdminForm(w, "Admin login", "/admin/login", "Invalid username or password", "Login")
+		return
+	}
+
+	token, err := a.store.CreateAdminSession()
+	if err != nil {
+		http.Error(w, "failed to create session", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("admin login: username=%s remote=%s", username, r.RemoteAddr)
+
+	setAdminCookie(w, token)
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func (a *app) adminLogoutHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("pastebox_admin")
+	if err == nil {
+		_ = a.store.DeleteAdminSession(cookie.Value)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "pastebox_admin",
+		Value:    "",
+		Path:     "/admin",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+}
+
+func (a *app) adminDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAdmin(w, r) {
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	id := r.FormValue("id")
+	if err := a.store.AdminDelete(id); err != nil {
+		http.Error(w, "delete failed", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("admin deleted: id=%s remote=%s", id, r.RemoteAddr)
+
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func (a *app) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	cookie, err := r.Cookie("pastebox_admin")
+	if err != nil {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return false
+	}
+
+	ok, err := a.store.ValidAdminSession(cookie.Value)
+	if err != nil || !ok {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return false
+	}
+
+	return true
+}
+
+func (a *app) renderAdminForm(w http.ResponseWriter, title string, action string, errorMessage string, button string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	_ = adminFormHTML.Execute(w, map[string]any{
+		"Title": title,
+		"Action": action,
+		"Error": errorMessage,
+		"Button": button,
+	})
+}
+
+func setAdminCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "pastebox_admin",
+		Value:    token,
+		Path:     "/admin",
+		MaxAge:   86400,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
 func isBrowserRequest(r *http.Request) bool {
 	ua := strings.ToLower(r.UserAgent())
 	if strings.HasPrefix(ua, "curl/") || strings.Contains(ua, "wget/") || strings.Contains(ua, "httpie/") {
@@ -397,25 +635,16 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
     <div class="mb-4 flex items-center justify-between gap-4">
       <h1 class="text-lg font-semibold text-gray-100">Pastebox / {{ .ID }}</h1>
       <div class="flex items-center gap-2">
-        <button
-          id="copyButton"
-          type="button"
-          class="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-900"
-          onclick="copyPasteContent()"
-        >
-          Copy
-        </button>
+        <button id="copyButton" type="button" class="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-900" onclick="copyPasteContent()">Copy</button>
         <a class="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-900" href="?raw=1">Raw</a>
       </div>
     </div>
     <pre id="pasteContent" class="overflow-x-auto whitespace-pre-wrap break-words rounded-2xl border border-gray-800 bg-[#111111] p-5 text-sm leading-6 text-gray-200">{{ .Content }}</pre>
   </main>
-
   <script>
     async function copyPasteContent() {
       const button = document.getElementById("copyButton");
       const content = document.getElementById("pasteContent").innerText;
-
       try {
         await navigator.clipboard.writeText(content);
         button.innerText = "Copied";
@@ -431,12 +660,111 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
         document.body.removeChild(textarea);
         button.innerText = "Copied";
       }
-
-      setTimeout(() => {
-        button.innerText = "Copy";
-      }, 1500);
+      setTimeout(() => { button.innerText = "Copy"; }, 1500);
     }
   </script>
+</body>
+</html>`))
+
+var adminFormHTML = template.Must(template.New("admin-form").Parse(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Title }} - Pastebox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-[#111111] text-zinc-100">
+  <main class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+    <section class="rounded-2xl border border-white/10 bg-[#151515]/80 p-8 shadow-xl transition-all duration-300 ease-out hover:border-white/20 hover:bg-[#161616]/90 hover:shadow-[0_0_28px_rgba(255,255,255,0.06)]">
+      <p class="mb-3 inline-flex rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-400">Pastebox Admin</p>
+      <h1 class="text-3xl font-bold tracking-tight text-white">{{ .Title }}</h1>
+      <p class="mt-3 text-sm text-zinc-400">The first account becomes the only administrator account.</p>
+
+      {{ if .Error }}
+      <div class="mt-5 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">{{ .Error }}</div>
+      {{ end }}
+
+      <form class="mt-6 space-y-4" method="post" action="{{ .Action }}">
+        <div>
+          <label class="mb-2 block text-sm text-zinc-400">Username</label>
+          <input class="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-zinc-100 outline-none transition focus:border-white/30" name="username" autocomplete="username" required>
+        </div>
+        <div>
+          <label class="mb-2 block text-sm text-zinc-400">Password</label>
+          <input class="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-zinc-100 outline-none transition focus:border-white/30" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="w-full rounded-xl bg-zinc-100 px-4 py-3 font-semibold text-zinc-950 transition hover:bg-white" type="submit">{{ .Button }}</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>`))
+
+var adminListHTML = template.Must(template.New("admin-list").Parse(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin - Pastebox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-[#111111] text-zinc-100">
+  <main class="mx-auto min-h-screen max-w-6xl px-6 py-12">
+    <section class="rounded-2xl border border-white/10 bg-[#151515]/80 p-8 shadow-xl transition-all duration-300 ease-out hover:border-white/20 hover:bg-[#161616]/90 hover:shadow-[0_0_28px_rgba(255,255,255,0.06)]">
+      <div class="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p class="mb-3 inline-flex rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-400">Pastebox Admin</p>
+          <h1 class="text-4xl font-bold tracking-tight text-white">Links</h1>
+          <p class="mt-3 text-sm text-zinc-400">Manage currently stored local paste files.</p>
+        </div>
+        <div class="flex gap-3">
+          <a class="rounded-xl border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/20 hover:text-white" href="/">Home</a>
+          <a class="rounded-xl border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/20 hover:text-white" href="/admin/logout">Logout</a>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto rounded-2xl border border-white/10">
+        <table class="min-w-full divide-y divide-white/10 text-sm">
+          <thead class="bg-black/30 text-left text-xs uppercase tracking-wider text-zinc-500">
+            <tr>
+              <th class="px-4 py-3">Code</th>
+              <th class="px-4 py-3">Policy</th>
+              <th class="px-4 py-3">Size</th>
+              <th class="px-4 py-3">Protected</th>
+              <th class="px-4 py-3">Created</th>
+              <th class="px-4 py-3">Expires</th>
+              <th class="px-4 py-3">Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/10">
+            {{ range .Items }}
+            <tr class="transition hover:bg-white/[0.03]">
+              <td class="whitespace-nowrap px-4 py-3">
+                <a class="font-mono text-zinc-100 underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-100" href="{{ $.BaseURL }}/{{ .ID }}" target="_blank">{{ .ID }}</a>
+              </td>
+              <td class="whitespace-nowrap px-4 py-3 text-zinc-300">{{ .DataPolicy }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-zinc-300">{{ .Size }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-zinc-300">{{ .Protected }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-zinc-400">{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-zinc-400">{{ if .ExpiresAt.IsZero }}-{{ else }}{{ .ExpiresAt.Format "2006-01-02 15:04:05" }}{{ end }}</td>
+              <td class="whitespace-nowrap px-4 py-3">
+                <form method="post" action="/admin/delete" onsubmit="return confirm('Delete {{ .ID }}?')">
+                  <input type="hidden" name="id" value="{{ .ID }}">
+                  <button class="rounded-lg border border-red-400/20 px-3 py-1.5 text-red-200 transition hover:bg-red-500/10" type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {{ else }}
+            <tr>
+              <td class="px-4 py-8 text-center text-zinc-500" colspan="7">No pastes found.</td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 </body>
 </html>`))
 
@@ -453,28 +781,6 @@ const fallbackIndexHTML = `<!doctype html>
     <div class="rounded-2xl border border-gray-800 bg-[#151515] p-8 shadow-2xl">
       <h1 class="text-3xl font-bold text-white">Pastebox</h1>
       <p class="mt-3 text-gray-400">curl-based file sharing service</p>
-
-      <div class="mt-8 space-y-4 text-sm">
-        <div class="rounded-xl bg-black/30 p-4">
-          <p class="mb-2 font-semibold text-gray-200">Upload text</p>
-          <code class="text-gray-300">echo "hello" | curl -X POST --data-binary @- {{ .BaseURL }}/</code>
-        </div>
-
-        <div class="rounded-xl bg-black/30 p-4">
-          <p class="mb-2 font-semibold text-gray-200">Upload file</p>
-          <code class="text-gray-300">curl -F "file=@test.txt" {{ .BaseURL }}/</code>
-        </div>
-
-        <div class="rounded-xl bg-black/30 p-4">
-          <p class="mb-2 font-semibold text-gray-200">Password protected</p>
-          <code class="text-gray-300">curl -H "usepassword: true" -F "file=@secret.txt" {{ .BaseURL }}/</code>
-        </div>
-
-        <div class="rounded-xl bg-black/30 p-4">
-          <p class="mb-2 font-semibold text-gray-200">Permanent storage</p>
-          <code class="text-gray-300">curl -H "data-policy: permanent" -F "file=@test.txt" {{ .BaseURL }}/</code>
-        </div>
-      </div>
     </div>
   </main>
 </body>

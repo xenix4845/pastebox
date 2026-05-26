@@ -3,6 +3,9 @@ package internal
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
+	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 var (
@@ -24,6 +29,7 @@ type Store struct {
 	DataDir string
 	TTL     time.Duration
 	locks   *lockManager
+	adminDB *sql.DB
 }
 
 type Metadata struct {
@@ -42,8 +48,23 @@ type Entry struct {
 	File *os.File
 }
 
+type AdminPasteItem struct {
+	ID          string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
+	DataPolicy  string
+	Size        int64
+	ContentType string
+	Protected   bool
+}
+
 func NewStore(dataDir string, ttl time.Duration) (*Store, error) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return nil, err
+	}
+
+	adminDB, err := openAdminDB(filepath.Join(dataDir, "pastebox.db"))
+	if err != nil {
 		return nil, err
 	}
 
@@ -51,6 +72,7 @@ func NewStore(dataDir string, ttl time.Duration) (*Store, error) {
 		DataDir: dataDir,
 		TTL:     ttl,
 		locks:   newLockManager(),
+		adminDB: adminDB,
 	}, nil
 }
 
@@ -81,16 +103,10 @@ func (s *Store) Create(r io.Reader, contentType string, usePassword bool, perman
 		return Metadata{}, "", "", closeErr
 	}
 
-	var password string
-	var passwordHash string
-
-	if usePassword {
-		password, err = generatePassword(8)
-		if err != nil {
-			_ = os.Remove(path)
-			return Metadata{}, "", "", err
-		}
-		passwordHash = hashSecret(password)
+	password, passwordHash, err := maybeCreatePassword(usePassword)
+	if err != nil {
+		_ = os.Remove(path)
+		return Metadata{}, "", "", err
 	}
 
 	deleteToken, err := randomString(tokenAlphabet, 32)
@@ -149,10 +165,8 @@ func (s *Store) Open(id string, password string) (*Entry, error) {
 		return nil, ErrNotFound
 	}
 
-	if meta.PasswordHash != "" {
-		if strings.TrimSpace(password) == "" || hashSecret(password) != meta.PasswordHash {
-			return nil, ErrInvalidPassword
-		}
+	if err := checkPassword(meta, password); err != nil {
+		return nil, err
 	}
 
 	file, err := os.Open(path)
@@ -186,9 +200,33 @@ func (s *Store) Delete(id string, token string) error {
 		return ErrNotFound
 	}
 
-	if meta.DeleteTokenHash == "" || hashSecret(token) != meta.DeleteTokenHash {
-		return ErrInvalidDeleteToken
+	if err := checkDeleteToken(meta, token); err != nil {
+		return err
 	}
+
+	fileErr := os.Remove(path)
+	metaErr := os.Remove(metaPath(path))
+
+	if fileErr != nil && !errors.Is(fileErr, os.ErrNotExist) {
+		return fileErr
+	}
+
+	if metaErr != nil && !errors.Is(metaErr, os.ErrNotExist) {
+		return metaErr
+	}
+
+	return nil
+}
+
+func (s *Store) AdminDelete(id string) error {
+	if !validID(id) {
+		return ErrNotFound
+	}
+
+	unlock := s.locks.Lock(id)
+	defer unlock()
+
+	path := s.path(id)
 
 	fileErr := os.Remove(path)
 	metaErr := os.Remove(metaPath(path))
@@ -240,6 +278,51 @@ func (s *Store) CleanupExpired() error {
 	}
 
 	return nil
+}
+
+func (s *Store) ListPastes() ([]AdminPasteItem, error) {
+	entries, err := os.ReadDir(s.DataDir)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]AdminPasteItem, 0)
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+
+		id := strings.TrimSuffix(name, ".json")
+		if !validID(id) {
+			continue
+		}
+
+		unlock := s.locks.Lock(id)
+		meta, err := s.readMetadata(id)
+		unlock()
+
+		if err != nil {
+			continue
+		}
+
+		items = append(items, AdminPasteItem{
+			ID:          meta.ID,
+			CreatedAt:   meta.CreatedAt,
+			ExpiresAt:   meta.ExpiresAt,
+			DataPolicy:  meta.DataPolicy,
+			Size:        meta.Size,
+			ContentType: meta.ContentType,
+			Protected:   meta.PasswordHash != "",
+		})
+	}
+
+	return items, nil
 }
 
 func (s *Store) reservePath() (string, string, error) {
@@ -296,6 +379,219 @@ func (s *Store) readMetadata(id string) (Metadata, error) {
 	return meta, nil
 }
 
+func openAdminDB(path string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+
+	db.SetMaxOpenConns(1)
+
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL;`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000;`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS pastebox_admin (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			username TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			salt TEXT NOT NULL,
+			created_at_unix INTEGER NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS admin_sessions (
+			token_hash TEXT PRIMARY KEY,
+			created_at_unix INTEGER NOT NULL,
+			expires_at_unix INTEGER NOT NULL
+		);
+	`)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return db, nil
+}
+
+func (s *Store) AdminExists() (bool, error) {
+	var count int
+
+	err := s.adminDB.QueryRow(`SELECT COUNT(*) FROM pastebox_admin`).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+func (s *Store) CreateAdmin(username string, password string) error {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+
+	if username == "" || password == "" {
+		return errors.New("username and password required")
+	}
+
+	exists, err := s.AdminExists()
+	if err != nil {
+		return err
+	}
+
+	if exists {
+		return errors.New("admin account already exists")
+	}
+
+	salt, err := randomString(tokenAlphabet, 32)
+	if err != nil {
+		return err
+	}
+
+	hash := hashAdminPassword(password, salt)
+
+	_, err = s.adminDB.Exec(`
+		INSERT INTO pastebox_admin (
+			id,
+			username,
+			password_hash,
+			salt,
+			created_at_unix
+		) VALUES (1, ?, ?, ?, ?)
+	`, username, hash, salt, time.Now().UTC().Unix())
+
+	return err
+}
+
+func (s *Store) AuthenticateAdmin(username string, password string) (bool, error) {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+
+	var storedHash string
+	var salt string
+
+	err := s.adminDB.QueryRow(`
+		SELECT password_hash, salt
+		FROM pastebox_admin
+		WHERE username = ?
+	`, username).Scan(&storedHash, &salt)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	candidate := hashAdminPassword(password, salt)
+
+	if subtle.ConstantTimeCompare([]byte(candidate), []byte(storedHash)) == 1 {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (s *Store) CreateAdminSession() (string, error) {
+	token, err := randomString(tokenAlphabet, 48)
+	if err != nil {
+		return "", err
+	}
+
+	now := time.Now().UTC()
+	expires := now.Add(24 * time.Hour)
+
+	_, err = s.adminDB.Exec(`
+		INSERT INTO admin_sessions (
+			token_hash,
+			created_at_unix,
+			expires_at_unix
+		) VALUES (?, ?, ?)
+	`, hashSecret(token), now.Unix(), expires.Unix())
+
+	if err != nil {
+		return "", err
+	}
+
+	return token, nil
+}
+
+func (s *Store) ValidAdminSession(token string) (bool, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false, nil
+	}
+
+	now := time.Now().UTC().Unix()
+
+	var count int
+	err := s.adminDB.QueryRow(`
+		SELECT COUNT(*)
+		FROM admin_sessions
+		WHERE token_hash = ?
+		  AND expires_at_unix > ?
+	`, hashSecret(token), now).Scan(&count)
+
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+func (s *Store) DeleteAdminSession(token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
+
+	_, err := s.adminDB.Exec(`
+		DELETE FROM admin_sessions
+		WHERE token_hash = ?
+	`, hashSecret(token))
+
+	return err
+}
+
+func maybeCreatePassword(usePassword bool) (string, string, error) {
+	if !usePassword {
+		return "", "", nil
+	}
+
+	password, err := generatePassword(8)
+	if err != nil {
+		return "", "", err
+	}
+
+	return password, hashSecret(password), nil
+}
+
+func checkPassword(meta Metadata, password string) error {
+	if meta.PasswordHash == "" {
+		return nil
+	}
+
+	if strings.TrimSpace(password) == "" || hashSecret(password) != meta.PasswordHash {
+		return ErrInvalidPassword
+	}
+
+	return nil
+}
+
+func checkDeleteToken(meta Metadata, token string) error {
+	if meta.DeleteTokenHash == "" || hashSecret(token) != meta.DeleteTokenHash {
+		return ErrInvalidDeleteToken
+	}
+
+	return nil
+}
+
 func isExpired(meta Metadata, now time.Time) bool {
 	if strings.EqualFold(meta.DataPolicy, "permanent") {
 		return false
@@ -332,6 +628,18 @@ func validID(id string) bool {
 func hashSecret(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
+}
+
+func hashAdminPassword(password string, salt string) string {
+	data := []byte(salt + ":" + password)
+
+	sum := sha256.Sum256(data)
+	for i := 0; i < 200000; i++ {
+		next := sha256.Sum256(sum[:])
+		sum = next
+	}
+
+	return base64.RawStdEncoding.EncodeToString(sum[:])
 }
 
 func generatePassword(length int) (string, error) {
