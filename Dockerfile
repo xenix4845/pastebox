@@ -13,10 +13,12 @@ RUN printf '%s\n' \
 WORKDIR /src
 
 COPY go.mod ./
-RUN go mod download
-
 COPY cmd ./cmd
 COPY internal ./internal
+
+# Generate go.sum inside the Docker build context.
+# This fixes builds where go.sum does not exist on the host.
+RUN go mod tidy
 
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/pastebox ./cmd/server
 
