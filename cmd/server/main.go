@@ -630,21 +630,42 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
   <title>{{ .ID }} - Pastebox</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="min-h-screen bg-[#111111] text-gray-200">
-  <main class="mx-auto max-w-5xl px-4 py-8">
-    <div class="mb-4 flex items-center justify-between gap-4">
-      <h1 class="text-lg font-semibold text-gray-100">Pastebox / {{ .ID }}</h1>
-      <div class="flex items-center gap-2">
-        <button id="copyButton" type="button" class="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-900" onclick="copyPasteContent()">Copy</button>
-        <a class="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-900" href="?raw=1">Raw</a>
+<body class="min-h-screen bg-[#111111] text-zinc-100">
+  <header class="sticky top-0 z-10 border-b border-white/10 bg-[#111111]/95 backdrop-blur">
+    <div class="mx-auto flex max-w-screen-2xl items-center justify-between gap-4 px-6 py-4">
+      <div class="min-w-0">
+        <p class="text-xs uppercase tracking-[0.24em] text-zinc-500">Pastebox</p>
+        <h1 class="truncate font-mono text-lg font-semibold text-zinc-100">{{ .ID }}</h1>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-2">
+        <button
+          id="copyButton"
+          type="button"
+          class="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
+          onclick="copyPasteContent()"
+        >
+          Copy
+        </button>
+        <a
+          class="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
+          href="?raw=1"
+        >
+          Raw
+        </a>
       </div>
     </div>
-    <pre id="pasteContent" class="overflow-x-auto whitespace-pre-wrap break-words rounded-2xl border border-gray-800 bg-[#111111] p-5 text-sm leading-6 text-gray-200">{{ .Content }}</pre>
+  </header>
+
+  <main class="mx-auto max-w-screen-2xl px-6 py-6">
+    <pre id="pasteContent" class="min-h-[calc(100vh-8rem)] overflow-x-auto whitespace-pre-wrap break-words font-mono text-sm leading-6 text-zinc-200">{{ .Content }}</pre>
   </main>
+
   <script>
     async function copyPasteContent() {
       const button = document.getElementById("copyButton");
       const content = document.getElementById("pasteContent").innerText;
+
       try {
         await navigator.clipboard.writeText(content);
         button.innerText = "Copied";
@@ -660,7 +681,10 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
         document.body.removeChild(textarea);
         button.innerText = "Copied";
       }
-      setTimeout(() => { button.innerText = "Copy"; }, 1500);
+
+      setTimeout(() => {
+        button.innerText = "Copy";
+      }, 1500);
     }
   </script>
 </body>
