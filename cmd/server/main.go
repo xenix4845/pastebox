@@ -169,10 +169,22 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	policy := strings.ToLower(strings.TrimSpace(r.Header.Get("data-policy")))
 	permanent := policy == "permanent"
 	once := policy == "once"
+	customCode := strings.TrimSpace(r.Header.Get("code"))
 
-	meta, password, deleteToken, err := a.store.Create(bytes.NewReader(content), contentType, usePassword, permanent, once)
+	meta, password, deleteToken, err := a.store.Create(bytes.NewReader(content), contentType, usePassword, permanent, once, customCode)
 	if err != nil {
 		log.Printf("upload failed: %v", err)
+
+		if errors.Is(err, pastebox.ErrInvalidCode) {
+			http.Error(w, "invalid code. use 1-10 characters: letters, numbers, underscore, or hyphen", http.StatusBadRequest)
+			return
+		}
+
+		if errors.Is(err, pastebox.ErrCodeExists) {
+			http.Error(w, "code already exists", http.StatusConflict)
+			return
+		}
+
 		http.Error(w, "upload failed", http.StatusInternalServerError)
 		return
 	}

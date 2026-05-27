@@ -23,6 +23,8 @@ var (
 	ErrNotFound           = errors.New("not found")
 	ErrInvalidPassword    = errors.New("invalid password")
 	ErrInvalidDeleteToken = errors.New("invalid delete token")
+	ErrInvalidCode        = errors.New("invalid code")
+	ErrCodeExists         = errors.New("code already exists")
 )
 
 type Store struct {
@@ -76,8 +78,8 @@ func NewStore(dataDir string, ttl time.Duration) (*Store, error) {
 	}, nil
 }
 
-func (s *Store) Create(r io.Reader, contentType string, usePassword bool, permanent bool, once bool) (Metadata, string, string, error) {
-	id, path, err := s.reservePath()
+func (s *Store) Create(r io.Reader, contentType string, usePassword bool, permanent bool, once bool, customCode string) (Metadata, string, string, error) {
+	id, path, err := s.reservePath(customCode)
 	if err != nil {
 		return Metadata{}, "", "", err
 	}
@@ -87,6 +89,10 @@ func (s *Store) Create(r io.Reader, contentType string, usePassword bool, perman
 
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return Metadata{}, "", "", ErrCodeExists
+		}
+
 		return Metadata{}, "", "", err
 	}
 
@@ -332,7 +338,31 @@ func (s *Store) ListPastes() ([]AdminPasteItem, error) {
 	return items, nil
 }
 
-func (s *Store) reservePath() (string, string, error) {
+func (s *Store) reservePath(customCode string) (string, string, error) {
+	customCode = strings.TrimSpace(customCode)
+
+	if customCode != "" {
+		if !validID(customCode) {
+			return "", "", ErrInvalidCode
+		}
+
+		path := s.path(customCode)
+
+		if _, err := os.Stat(path); err == nil {
+			return "", "", ErrCodeExists
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", "", err
+		}
+
+		if _, err := os.Stat(metaPath(path)); err == nil {
+			return "", "", ErrCodeExists
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", "", err
+		}
+
+		return customCode, path, nil
+	}
+
 	for i := 0; i < 100; i++ {
 		id, err := randomString(idAlphabet, 5)
 		if err != nil {
@@ -612,7 +642,7 @@ func isExpired(meta Metadata, now time.Time) bool {
 }
 
 func validID(id string) bool {
-	if len(id) != 5 {
+	if len(id) < 1 || len(id) > 10 {
 		return false
 	}
 
@@ -624,6 +654,9 @@ func validID(id string) bool {
 			continue
 		}
 		if r >= '0' && r <= '9' {
+			continue
+		}
+		if r == '_' || r == '-' {
 			continue
 		}
 		return false
@@ -657,7 +690,7 @@ func generatePassword(length int) (string, error) {
 	upper := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	lower := "abcdefghijklmnopqrstuvwxyz"
 	digits := "0123456789"
-	special := "!@$%^*_-+{}[]"
+	special := "!@#$%^&*_-+?{}[]"
 	all := upper + lower + digits + special
 
 	result := make([]byte, 0, length)
