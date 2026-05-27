@@ -259,8 +259,9 @@ func (a *app) viewHandler(w http.ResponseWriter, r *http.Request, id string) {
 		w.WriteHeader(http.StatusOK)
 
 		_ = pasteViewHTML.Execute(w, map[string]any{
-			"ID":      entry.Meta.ID,
-			"Content": string(content),
+			"ID":       entry.Meta.ID,
+			"Content":  string(content),
+			"Language": syntaxLanguage(entry.Meta.ContentType),
 		})
 		return
 	}
@@ -586,15 +587,15 @@ func allowTextUpload(filename string, contentType string, content []byte) (bool,
 		return false, "blocked extension"
 	}
 
-	if isBlockedUploadContentType(lowerContentType) {
-		return false, "blocked content type"
-	}
-
 	if isKnownTextExtension(ext) {
 		if looksLikeText(content) {
 			return true, ""
 		}
 		return false, "text extension but binary content"
+	}
+
+	if isBlockedUploadContentType(lowerContentType) {
+		return false, "blocked content type"
 	}
 
 	if isTextContentType(lowerContentType) {
@@ -615,6 +616,37 @@ func normalizeTextContentType(filename string, contentType string) string {
 	ext := normalizedUploadExt(filename)
 	lowerContentType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 
+	switch ext {
+	case ".rs":
+		return "text/x-rust; charset=utf-8"
+	case ".go":
+		return "text/x-go; charset=utf-8"
+	case ".js", ".mjs", ".cjs":
+		return "application/javascript; charset=utf-8"
+	case ".py":
+		return "text/x-python; charset=utf-8"
+	case ".md", ".markdown":
+		return "text/markdown; charset=utf-8"
+	case ".ts", ".tsx":
+		return "text/typescript; charset=utf-8"
+	case ".php":
+		return "application/x-httpd-php; charset=utf-8"
+	case ".html", ".htm":
+		return "text/html; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".csv", ".tsv":
+		return "text/csv; charset=utf-8"
+	case ".json", ".jsonl":
+		return "application/json; charset=utf-8"
+	case ".xml":
+		return "application/xml; charset=utf-8"
+	case ".yaml", ".yml":
+		return "application/yaml; charset=utf-8"
+	case ".sh", ".bash", ".zsh":
+		return "text/x-shellscript; charset=utf-8"
+	}
+
 	if lowerContentType != "" && isTextContentType(lowerContentType) {
 		if strings.Contains(strings.ToLower(contentType), "charset=") {
 			return contentType
@@ -622,28 +654,7 @@ func normalizeTextContentType(filename string, contentType string) string {
 		return lowerContentType + "; charset=utf-8"
 	}
 
-	switch ext {
-	case ".csv", ".tsv":
-		return "text/csv; charset=utf-8"
-	case ".md", ".markdown":
-		return "text/markdown; charset=utf-8"
-	case ".json", ".jsonl":
-		return "application/json; charset=utf-8"
-	case ".xml":
-		return "application/xml; charset=utf-8"
-	case ".yaml", ".yml":
-		return "application/yaml; charset=utf-8"
-	case ".html", ".htm":
-		return "text/html; charset=utf-8"
-	case ".css":
-		return "text/css; charset=utf-8"
-	case ".js", ".mjs", ".cjs":
-		return "application/javascript; charset=utf-8"
-	case ".sh", ".bash", ".zsh":
-		return "text/x-shellscript; charset=utf-8"
-	default:
-		return "text/plain; charset=utf-8"
-	}
+	return "text/plain; charset=utf-8"
 }
 
 func normalizedUploadExt(filename string) string {
@@ -746,6 +757,33 @@ func isTextContentType(contentType string) bool {
 	}
 
 	return false
+}
+
+func syntaxLanguage(contentType string) string {
+	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+
+	switch {
+	case strings.Contains(contentType, "x-rust"):
+		return "rust"
+	case strings.Contains(contentType, "x-go"):
+		return "go"
+	case strings.Contains(contentType, "javascript"):
+		return "javascript"
+	case strings.Contains(contentType, "x-python"):
+		return "python"
+	case strings.Contains(contentType, "markdown"):
+		return "markdown"
+	case strings.Contains(contentType, "typescript"):
+		return "typescript"
+	case strings.Contains(contentType, "php"):
+		return "php"
+	case contentType == "text/html":
+		return "xml"
+	case contentType == "text/css":
+		return "css"
+	default:
+		return "plaintext"
+	}
 }
 
 func isBrowserRequest(r *http.Request) bool {
@@ -879,13 +917,18 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ .ID }} - Pastebox</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
 </head>
 <body class="min-h-screen bg-[#111111] text-zinc-100">
   <header class="sticky top-0 z-10 border-b border-white/10 bg-[#111111]/95 backdrop-blur">
     <div class="mx-auto flex max-w-screen-2xl items-center justify-between gap-4 px-6 py-4">
       <div class="min-w-0">
         <p class="text-xs uppercase tracking-[0.24em] text-zinc-500">Pastebox</p>
-        <h1 class="truncate font-mono text-lg font-semibold text-zinc-100">{{ .ID }}</h1>
+        <div class="flex min-w-0 items-center gap-3">
+          <h1 class="truncate font-mono text-lg font-semibold text-zinc-100">{{ .ID }}</h1>
+          <span class="rounded-full border border-white/10 px-2 py-0.5 text-xs text-zinc-500">{{ .Language }}</span>
+        </div>
       </div>
 
       <div class="flex shrink-0 items-center gap-2">
@@ -908,10 +951,12 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
   </header>
 
   <main class="mx-auto max-w-screen-2xl px-6 py-6">
-    <pre id="pasteContent" class="min-h-[calc(100vh-8rem)] overflow-x-auto whitespace-pre-wrap break-words font-mono text-sm leading-6 text-zinc-200">{{ .Content }}</pre>
+    <pre class="min-h-[calc(100vh-8rem)] overflow-x-auto whitespace-pre-wrap break-words bg-transparent p-0 font-mono text-sm leading-6 text-zinc-200"><code id="pasteContent" class="language-{{ .Language }} bg-transparent p-0">{{ .Content }}</code></pre>
   </main>
 
   <script>
+    hljs.highlightAll();
+
     async function copyPasteContent() {
       const button = document.getElementById("copyButton");
       const content = document.getElementById("pasteContent").innerText;
