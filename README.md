@@ -37,9 +37,8 @@ pastebox/
 
 ### How to use?
 1. Clone the repository or download it as a .zip file.
-2. Build and run using docker compose: `docker compose up -d --build`.
-3. Open `http://localhost:3000` in your browser, or access the service through a reverse proxy configured with Nginx, Traefik, or Caddy.
-4. Upload a file using `curl`.
+2. Run the service using Docker Compose. You can build and run it locally with `docker compose up -d --build`, or use the prebuilt image. To use the prebuilt image, run it with `docker-compose-dockerhub.yml`.
+3. Open `http://localhost:3000` in your browser, or access the service through a reverse proxy configured with Nginx, Traefik, or Caddy. Once the service is running properly, you can use it with `curl`.
 
 ### Features
 > [!NOTE]
