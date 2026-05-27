@@ -24,6 +24,8 @@ type app struct {
 	index *template.Template
 }
 
+const maxUploadSize int64 = 1 << 30 // 1 GiB
+
 func main() {
 	listenAddr := getenv("LISTEN_ADDR", ":8080")
 	dataDir := getenv("DATA_DIR", "/paste-data")
@@ -116,12 +118,19 @@ func (a *app) indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+
 	var reader io.Reader
 	var filename string
 	contentType := r.Header.Get("Content-Type")
 
 	if strings.HasPrefix(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(64 << 20); err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "request body too large") {
+				http.Error(w, "upload too large. maximum size is 1GB", http.StatusRequestEntityTooLarge)
+				return
+			}
+
 			http.Error(w, "invalid multipart form", http.StatusBadRequest)
 			return
 		}
@@ -137,6 +146,12 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 		if header != nil {
 			filename = header.Filename
+
+			if header.Size > maxUploadSize {
+				http.Error(w, "upload too large. maximum size is 1GB", http.StatusRequestEntityTooLarge)
+				return
+			}
+
 			if detected := mime.TypeByExtension(strings.ToLower(filepath.Ext(header.Filename))); detected != "" {
 				contentType = detected
 			} else {
@@ -150,9 +165,14 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	content, err := io.ReadAll(reader)
+	content, err := io.ReadAll(io.LimitReader(reader, maxUploadSize+1))
 	if err != nil {
 		http.Error(w, "failed to read upload", http.StatusBadRequest)
+		return
+	}
+
+	if int64(len(content)) > maxUploadSize {
+		http.Error(w, "upload too large. maximum size is 1GB", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -658,6 +678,8 @@ func normalizeTextContentType(filename string, contentType string) string {
 	lowerContentType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 
 	switch ext {
+	case ".log":
+		return "text/x-log; charset=utf-8"
 	case ".rs":
 		return "text/x-rust; charset=utf-8"
 	case ".go":
@@ -804,6 +826,8 @@ func syntaxLanguage(contentType string) string {
 	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 
 	switch {
+	case strings.Contains(contentType, "x-log"):
+		return "logs"
 	case strings.Contains(contentType, "x-rust"):
 		return "rust"
 	case strings.Contains(contentType, "x-go"):
@@ -1036,7 +1060,7 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
 
     renderLineNumbers();
 
-    if (window.hljs) {
+    if (window.hljs && "{{ .Language }}" !== "logs") {
       hljs.highlightElement(pasteContent);
     }
 
