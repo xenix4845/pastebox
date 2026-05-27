@@ -657,7 +657,6 @@ func generatePassword(length int) (string, error) {
 	upper := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	lower := "abcdefghijklmnopqrstuvwxyz"
 	digits := "0123456789"
-	// URL 파라미터 파싱 오류를 방지하기 위해 =, &, ?, # 문자를 제외
 	special := "!@$%^*_-+{}[]"
 	all := upper + lower + digits + special
 
