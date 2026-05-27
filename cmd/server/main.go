@@ -91,7 +91,7 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 
 	id := strings.TrimPrefix(r.URL.Path, "/")
 	if strings.Contains(id, "/") || id == "" {
-		http.NotFound(w, r)
+		a.notFoundHandler(w, r)
 		return
 	}
 
@@ -237,10 +237,10 @@ func (a *app) viewHandler(w http.ResponseWriter, r *http.Request, id string) {
 	entry, err := a.store.Open(id, password)
 	if err != nil {
 		if errors.Is(err, pastebox.ErrInvalidPassword) {
-			http.Error(w, "password required or invalid. use ?password=... or paste-password header", http.StatusUnauthorized)
+			a.passwordRequiredHandler(w, r, id)
 			return
 		}
-		http.NotFound(w, r)
+		a.notFoundHandler(w, r)
 		return
 	}
 	defer entry.File.Close()
@@ -283,6 +283,35 @@ func (a *app) viewHandler(w http.ResponseWriter, r *http.Request, id string) {
 	}
 
 	_, _ = io.Copy(w, entry.File)
+}
+
+func (a *app) passwordRequiredHandler(w http.ResponseWriter, r *http.Request, id string) {
+	if !isBrowserRequest(r) {
+		http.Error(w, "password required or invalid. use ?password=... or paste-password header", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusUnauthorized)
+
+	_ = passwordPageHTML.Execute(w, map[string]any{
+		"ID":     id,
+		"Action": "/" + id,
+	})
+}
+
+func (a *app) notFoundHandler(w http.ResponseWriter, r *http.Request) {
+	if !isBrowserRequest(r) {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+
+	_ = notFoundPageHTML.Execute(w, map[string]any{
+		"Path": r.URL.Path,
+	})
 }
 
 func (a *app) adminHandler(w http.ResponseWriter, r *http.Request) {
@@ -1117,6 +1146,70 @@ var adminListHTML = template.Must(template.New("admin-list").Parse(`<!doctype ht
             {{ end }}
           </tbody>
         </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>`))
+
+
+var passwordPageHTML = template.Must(template.New("password-page").Parse(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Password Required - Pastebox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-[#111111] text-zinc-100">
+  <main class="mx-auto flex min-h-screen max-w-md items-center justify-center px-6 py-12">
+    <section class="w-full rounded-2xl border border-white/10 bg-[#151515]/80 p-8 shadow-xl transition-all duration-300 ease-out hover:border-white/20 hover:bg-[#161616]/90 hover:shadow-[0_0_28px_rgba(255,255,255,0.06)]">
+      <p class="mb-3 inline-flex rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-400">Protected paste</p>
+      <h1 class="text-3xl font-bold tracking-tight text-white">Password required</h1>
+      <p class="mt-3 text-sm leading-6 text-zinc-400">Enter the password to view this paste.</p>
+
+      <form class="mt-6 space-y-4" method="get" action="{{ .Action }}">
+        <div>
+          <label class="mb-2 block text-sm text-zinc-400" for="password">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            class="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-white/30"
+            placeholder="Enter paste password"
+            required
+          >
+        </div>
+
+        <button class="w-full rounded-xl bg-zinc-100 px-4 py-3 font-semibold text-zinc-950 transition hover:bg-white" type="submit">Open paste</button>
+      </form>
+
+      <div class="mt-5 flex justify-center">
+        <a class="text-sm text-zinc-500 transition hover:text-zinc-300" href="/">Back to home</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>`))
+
+var notFoundPageHTML = template.Must(template.New("not-found-page").Parse(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>404 - Pastebox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-[#111111] text-zinc-100">
+  <main class="mx-auto flex min-h-screen max-w-md items-center justify-center px-6 py-12 text-center">
+    <section class="w-full">
+      <p class="text-sm uppercase tracking-[0.3em] text-zinc-600">404</p>
+      <h1 class="mt-4 text-4xl font-bold tracking-tight text-white">Paste not found</h1>
+      <p class="mt-4 text-sm leading-6 text-zinc-500">The paste may not exist, may have expired, or may have already been deleted.</p>
+
+      <div class="mt-8">
+        <a class="inline-flex rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:text-white" href="/">Back to home</a>
       </div>
     </section>
   </main>
