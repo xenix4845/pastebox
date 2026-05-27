@@ -144,5 +144,7 @@ pastebox/
 
 14. **Admin Page**: You can access the admin page by adding `/admin` after the IP address or domain. If no account exists, the first created account becomes the administrator account, and additional account creation is disabled afterward. The admin database is stored at `/paste-data/pastebox.db` inside the container, or `./data/pastebox.db` on the host. Passwords are stored in encrypted form.
 
+15. **Syntax Highlighting Support**: Syntax highlighting is supported for files with the extensions `.txt`, `.md`, `.log`, `.csv`, `.go`, `.rs`, `.js`, `.py`, `.ts`, `.php`, `.html`, and `.css`.
+
 ### Data Policy
 For details about the data policy header, see [DATA_POLICY.md](./DATA_POLICY.md)
