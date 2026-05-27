@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths-ignore:
-      - "*.md"
+      - "**/*.md"
+      - "docs/**"
       - "LICENSE"
   workflow_dispatch:
 
@@ -40,6 +41,9 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Using tag: $TAG"
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -55,6 +59,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             kmw0410/pastebox:latest
             kmw0410/pastebox:${{ steps.version.outputs.tag }}
