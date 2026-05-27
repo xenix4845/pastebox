@@ -105,9 +105,8 @@ pastebox/
    deleted
    ```
 
-8. **Password-Protected Links**: Supports private upload links using the `usepassword: true` header.
+8. **Password-Protected Links**: Private upload link creation using the `usepassword: true` header is supported. When this header is used, an 8-character password is issued, generated from a combination of uppercase English letters, lowercase English letters, numbers, and special characters. Files can be viewed directly using the `?password=...` query parameter or the `paste-password: ...` header, or by entering the password manually when accessing the link in a browser.
 
-   When this header is used, an 8-character password is generated using a combination of uppercase letters, lowercase letters, numbers, and special characters. Files can be accessed using either the `?password=...` query parameter or the `paste-password: ...` header.
    ```
    # Create password-protected link
    curl -H "usepassword: true" -F "file=@secret.txt" http://localhost:8080/
@@ -123,6 +122,7 @@ pastebox/
    ![](./preview3.png)
 
 9. **Upload Response Format**: When an upload succeeds, Pastebox returns the URL, expiration time, and delete link. If the upload is password-protected, the `password` field is also included.
+
    ```
    url: http://localhost:8080/RANDOM_CODE
    expires: 2026-06-24T05:10:26Z
@@ -135,6 +135,7 @@ pastebox/
 11. **Text File Rendering in Browser**: Text-based files such as `.txt` and `.log` are displayed directly in the browser instead of being downloaded. If you need the original raw response, use `?raw=1`.
 
 12. **Creation and Deletion Logs**: File creation and deletion events are recorded in the container logs.
+
    ```
    created: id=AbC12 remote=127.0.0.1:51234 size=123 content_type="text/plain; charset=utf-8" policy=temporary expires=2026-06-24T05:10:26Z protected=false
    deleted: id=AbC12 remote=127.0.0.1:51234

@@ -49,16 +49,19 @@ pastebox/
 1. **파일 자동 삭제**: 업로드 시점 기준 30일 후 자동 삭제됩니다.
 
 2. **텍스트 업로드**: **echo, cat (cat << EOF)**와 같은 Linux 명령어와 연계하여 텍스트를 직접 업로드할 수 있습니다.
+
    ```
    echo "hello" | curl -X POST --data-binary @- http://localhost:8080/
    ```
 
 3. **파일 업로드**: `multipart/form-data` 형식의 파일 업로드를 지원합니다.
+
    ```
    curl -F "file=@test.txt" http://localhost:8080/
    ```
 
 4. **영구 저장**: `data-policy: permanent` 헤더를 사용하면 자동 삭제 대상에서 제외되어 영구 저장됩니다.
+
    ```
    curl -H "data-policy: permanent" -F "file=@test.txt" http://localhost:8080/
    ```
@@ -76,6 +79,7 @@ pastebox/
    ```
 
 5. **일회성 저장**: `data-policy: once` 헤더를 사용하면 일회성으로 저장되며 사용자가 확인한 경우 자동으로 삭제됩니다.
+
    ```
    curl -H "data-policy: once" -F "file=@test.txt" http://localhost:8080/
    ```
@@ -92,6 +96,7 @@ pastebox/
    ```
 
 6. **만료 시간 표시**: 일반 업로드는 응답에 `expires` 항목이 포함되어 만료 시간을 확인할 수 있습니다. `data-policy: permanent`를 사용한 경우에는 만료 시간이 표시되지 않습니다.
+
    ```
    url: http://localhost:8080/RANDOM_CODE
    expires: 2026-06-24T05:10:26Z
@@ -99,6 +104,7 @@ pastebox/
    ```
 
 7. **수동 삭제**: 업로드 시 발급되는 삭제 URL을 사용하여 파일을 직접 삭제할 수 있습니다. 삭제 요청은 컨테이너 로그에도 기록됩니다.
+
    ```
    # 파일 삭제
    curl "http://localhost:8080/RANDOM_CODE?delete=DELETE_TOKEN"
@@ -107,9 +113,8 @@ pastebox/
    deleted
    ```
 
-8. **비밀번호 링크**: `usepassword: true` 헤더를 사용한 비공개 업로드 링크 생성을 지원합니다.
+8. **비밀번호 링크**: `usepassword: true` 헤더를 사용한 비공개 업로드 링크 생성을 지원합니다. 헤더 사용 시 **영문 대문자 + 영문 소문자 + 숫자 + 특수문자** 조합으로 생성된 8자리 비밀번호가 발급됩니다. 파일은 `?password=...` 쿼리 파라미터 또는 `paste-password: ...` 헤더를 사용하여 바로 확인하거나 브라우저에서 접근 시 직접 비밀번호를 입력하여 확인할 수 있습니다.
 
-   헤더 사용 시 **영문 대문자 + 영문 소문자 + 숫자 + 특수문자** 조합으로 생성된 8자리 비밀번호가 발급됩니다. 파일은 `?password=...` 쿼리 파라미터 또는 `paste-password: ...` 헤더를 통해 접근할 수 있습니다.
    ```
    # 비밀번호 링크 생성
    curl -H "usepassword: true" -F "file=@secret.txt" http://localhost:8080/
@@ -121,11 +126,11 @@ pastebox/
    curl "http://localhost:8080/RANDOM_CODE?password=RANDOM_PASSWORD"
    ```
    
-   
    ![](./preview2.png)
    ![](./preview3.png)
 
 9. **업로드 응답 형식**: 업로드가 성공하면 URL, 만료 시간, 삭제 링크가 반환됩니다. 비밀번호 링크인 경우 `password` 항목도 함께 반환됩니다.
+
    ```
    url: http://localhost:8080/RANDOM_CODE
    expires: 2026-06-24T05:10:26Z
@@ -138,6 +143,7 @@ pastebox/
 11. **텍스트 파일 브라우저 표시**: `.txt`, `.log` 같은 텍스트 기반 파일은 다운로드되지 않고 브라우저에서 바로 표시됩니다. 원본 raw 응답이 필요하면 `?raw=1`을 사용할 수 있습니다.
 
 12. **생성/삭제 로그**: 파일 생성 및 삭제 시 컨테이너 로그에 기록됩니다.
+
    ```
    created: id=AbC12 remote=127.0.0.1:51234 size=123 content_type="text/plain; charset=utf-8" policy=temporary expires=2026-06-24T05:10:26Z protected=false
    deleted: id=AbC12 remote=127.0.0.1:51234
