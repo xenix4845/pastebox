@@ -979,16 +979,86 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
     </div>
   </header>
 
-  <main class="mx-auto max-w-screen-2xl px-6 py-6">
-    <pre class="min-h-[calc(100vh-8rem)] overflow-x-auto whitespace-pre-wrap break-words bg-transparent p-0 font-mono text-sm leading-6 text-zinc-200"><code id="pasteContent" class="language-{{ .Language }} bg-transparent p-0">{{ .Content }}</code></pre>
+  <main class="mx-auto max-w-screen-2xl px-6 py-6 h-[calc(100vh-5rem)] flex flex-col">
+    <div class="flex-1 relative border border-white/10 rounded-xl bg-[#151515] overflow-hidden flex font-mono text-sm leading-6 text-zinc-200" id="viewerContainer">
+      <div class="w-16 shrink-0 border-r border-white/10 bg-[#111111] text-zinc-600 select-none relative overflow-hidden">
+         <div id="lineNumbers" class="absolute left-0 right-0 top-0 px-4 py-4 text-right whitespace-pre"></div>
+      </div>
+      <div id="codeArea" class="flex-1 relative overflow-auto">
+         <div id="spacer" class="w-[1px]"></div>
+         <div id="contentViewport" class="absolute left-0 right-0 top-0 px-4 py-4 whitespace-pre text-zinc-200"></div>
+      </div>
+    </div>
+    <div id="pasteData" style="display: none;">{{ .Content }}</div>
   </main>
 
   <script>
-    hljs.highlightAll();
+    const rawDataEl = document.getElementById('pasteData');
+    const rawText = rawDataEl.textContent;
+    const lines = rawText.split('\n');
+
+    const codeArea = document.getElementById('codeArea');
+    const spacer = document.getElementById('spacer');
+    const viewport = document.getElementById('contentViewport');
+    const lineNumbersDiv = document.getElementById('lineNumbers');
+
+    const lineHeight = 24; // leading-6 is 1.5rem = 24px
+    const paddingTop = 16; // py-4 is 1rem = 16px
+    const paddingBottom = 16;
+
+    const totalHeight = lines.length * lineHeight + paddingTop + paddingBottom;
+    spacer.style.height = totalHeight + 'px';
+
+    let detectedLanguage = '{{ .Language }}';
+    if (detectedLanguage === 'plaintext' || !detectedLanguage) {
+        if (typeof hljs !== 'undefined') {
+            const sampleText = lines.slice(0, 100).join('\n');
+            const result = hljs.highlightAuto(sampleText);
+            detectedLanguage = result.language || 'plaintext';
+        }
+    }
+
+    function render() {
+        const scrollTop = codeArea.scrollTop;
+        const containerHeight = codeArea.clientHeight;
+
+        let startIdx = Math.floor((scrollTop - paddingTop) / lineHeight) - 5;
+        let endIdx = Math.ceil((scrollTop - paddingTop + containerHeight) / lineHeight) + 5;
+
+        if (startIdx < 0) startIdx = 0;
+        if (endIdx > lines.length) endIdx = lines.length;
+
+        const visibleLines = lines.slice(startIdx, endIdx);
+        const visibleText = visibleLines.join('\n');
+
+        if (typeof hljs !== 'undefined' && detectedLanguage !== 'plaintext') {
+            try {
+                viewport.innerHTML = hljs.highlight(visibleText, { language: detectedLanguage, ignoreIllegals: true }).value;
+            } catch (e) {
+                viewport.textContent = visibleText;
+            }
+        } else {
+            viewport.textContent = visibleText;
+        }
+
+        const offsetTop = paddingTop + startIdx * lineHeight;
+        viewport.style.transform = "translate3d(0, " + offsetTop + "px, 0)";
+
+        let numStr = '';
+        for (let i = startIdx + 1; i <= endIdx; i++) {
+            numStr += i + '\n';
+        }
+        lineNumbersDiv.textContent = numStr;
+        lineNumbersDiv.style.transform = "translate3d(0, " + (offsetTop - scrollTop) + "px, 0)";
+    }
+
+    codeArea.addEventListener('scroll', render);
+    window.addEventListener('resize', render);
+    render();
 
     async function copyPasteContent() {
       const button = document.getElementById("copyButton");
-      const content = document.getElementById("pasteContent").innerText;
+      const content = rawText;
 
       try {
         await navigator.clipboard.writeText(content);
