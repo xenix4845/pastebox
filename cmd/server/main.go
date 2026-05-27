@@ -969,6 +969,15 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
         >
           Copy
         </button>
+        <button
+          id="lineToggle"
+          type="button"
+          class="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
+          onclick="toggleLineNumbers()"
+          aria-pressed="false"
+        >
+          Line numbers
+        </button>
         <a
           class="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
           href="?raw=1"
@@ -979,82 +988,45 @@ var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
     </div>
   </header>
 
-  <main class="mx-auto max-w-screen-2xl px-6 py-6 h-[calc(100vh-5rem)] flex flex-col">
-    <div class="flex-1 relative border border-white/10 rounded-xl bg-[#151515] overflow-hidden flex font-mono text-sm leading-6 text-zinc-200" id="viewerContainer">
-      <div class="w-16 shrink-0 border-r border-white/10 bg-[#111111] text-zinc-600 select-none relative overflow-hidden">
-         <div id="lineNumbers" class="absolute left-0 right-0 top-0 px-4 py-4 text-right whitespace-pre"></div>
-      </div>
-      <div id="codeArea" class="flex-1 relative overflow-auto">
-         <div id="spacer" class="w-[1px]"></div>
-         <div id="contentViewport" class="absolute left-0 right-0 top-0 px-4 py-4 whitespace-pre text-zinc-200"></div>
-      </div>
+  <main class="mx-auto max-w-screen-2xl px-6 py-6">
+    <div id="viewer" class="grid grid-cols-1 gap-4 overflow-x-auto font-mono text-sm leading-6">
+      <pre
+        id="lineNumbers"
+        aria-hidden="true"
+        class="hidden select-none border-r border-white/10 pr-4 text-right text-zinc-600"
+      ></pre>
+      <pre class="m-0 whitespace-pre text-zinc-200"><code id="pasteContent" class="language-{{ .Language }} bg-transparent p-0">{{ .Content }}</code></pre>
     </div>
-    <div id="pasteData" style="display: none;">{{ .Content }}</div>
   </main>
 
   <script>
-    const rawDataEl = document.getElementById('pasteData');
-    const rawText = rawDataEl.textContent;
-    const lines = rawText.split('\n');
+    const viewer = document.getElementById("viewer");
+    const lineNumbers = document.getElementById("lineNumbers");
+    const lineToggle = document.getElementById("lineToggle");
+    const pasteContent = document.getElementById("pasteContent");
+    const rawText = pasteContent.textContent || "";
 
-    const codeArea = document.getElementById('codeArea');
-    const spacer = document.getElementById('spacer');
-    const viewport = document.getElementById('contentViewport');
-    const lineNumbersDiv = document.getElementById('lineNumbers');
-
-    const lineHeight = 24; // leading-6 is 1.5rem = 24px
-    const paddingTop = 16; // py-4 is 1rem = 16px
-    const paddingBottom = 16;
-
-    const totalHeight = lines.length * lineHeight + paddingTop + paddingBottom;
-    spacer.style.height = totalHeight + 'px';
-
-    let detectedLanguage = '{{ .Language }}';
-    if (detectedLanguage === 'plaintext' || !detectedLanguage) {
-        if (typeof hljs !== 'undefined') {
-            const sampleText = lines.slice(0, 100).join('\n');
-            const result = hljs.highlightAuto(sampleText);
-            detectedLanguage = result.language || 'plaintext';
-        }
+    function renderLineNumbers() {
+      const lineCount = Math.max(1, rawText.split("\n").length);
+      lineNumbers.textContent = Array.from({ length: lineCount }, (_, index) => index + 1).join("\n");
     }
 
-    function render() {
-        const scrollTop = codeArea.scrollTop;
-        const containerHeight = codeArea.clientHeight;
+    function toggleLineNumbers() {
+      const enabled = lineNumbers.classList.toggle("hidden") === false;
 
-        let startIdx = Math.floor((scrollTop - paddingTop) / lineHeight) - 5;
-        let endIdx = Math.ceil((scrollTop - paddingTop + containerHeight) / lineHeight) + 5;
-
-        if (startIdx < 0) startIdx = 0;
-        if (endIdx > lines.length) endIdx = lines.length;
-
-        const visibleLines = lines.slice(startIdx, endIdx);
-        const visibleText = visibleLines.join('\n');
-
-        if (typeof hljs !== 'undefined' && detectedLanguage !== 'plaintext') {
-            try {
-                viewport.innerHTML = hljs.highlight(visibleText, { language: detectedLanguage, ignoreIllegals: true }).value;
-            } catch (e) {
-                viewport.textContent = visibleText;
-            }
-        } else {
-            viewport.textContent = visibleText;
-        }
-
-        const offsetTop = paddingTop + startIdx * lineHeight;
-        viewport.style.transform = "translate3d(0, " + offsetTop + "px, 0)";
-
-        let numStr = '';
-        for (let i = startIdx + 1; i <= endIdx; i++) {
-            numStr += i + '\n';
-        }
-        lineNumbersDiv.textContent = numStr;
-        lineNumbersDiv.style.transform = "translate3d(0, " + (offsetTop - scrollTop) + "px, 0)";
+      viewer.classList.toggle("grid-cols-1", !enabled);
+      viewer.classList.toggle("grid-cols-[auto_1fr]", enabled);
+      lineToggle.classList.toggle("border-white/25", enabled);
+      lineToggle.classList.toggle("bg-white/[0.07]", enabled);
+      lineToggle.classList.toggle("text-white", enabled);
+      lineToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
     }
 
-    codeArea.addEventListener('scroll', render);
-    window.addEventListener('resize', render);
-    render();
+    renderLineNumbers();
+
+    if (window.hljs) {
+      hljs.highlightElement(pasteContent);
+    }
 
     async function copyPasteContent() {
       const button = document.getElementById("copyButton");
