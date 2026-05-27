@@ -125,7 +125,7 @@ pastebox/
    ![](./preview2.png)
    ![](./preview3.png)
 
-9. 
+9. **Custom Code**: You can use the `custom: ...` header to create a link with a code of your choice instead of a randomly generated code. **Uppercase and lowercase English letters, numbers, and the special characters `_` and `-` are supported.** Codes longer than 10 characters or duplicate codes cannot be created.
 
 10. **Upload Response Format**: When an upload succeeds, Pastebox returns the URL, expiration time, and delete link. If the upload is password-protected, the `password` field is also included.
 

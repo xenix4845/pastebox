@@ -127,11 +127,11 @@ pastebox/
    ![](./preview2.png)
    ![](./preview3.png)
 
-9. **Custom Code**: You can use the `custom: ...` header to create a link with a code of your choice instead of a randomly generated code. **Uppercase and lowercase English letters, numbers, and the special characters `_` and `-` are supported.** Codes longer than 10 characters or duplicate codes cannot be created.
-  
-  ```bash
-  curl -H "custom: custom123" -F "file=@secret.txt" http://localhost:8080/
-  ```
+9. **사용자 지정 코드**: `custom: ...` 헤더를 사용하면 무작위로 생성된 코드 대신 원하는 코드를 사용하여 링크를 만들 수 있습니다. **영문 대문자와 소문자, 숫자, 특수 문자 `_` 및 `-`를 지원합니다.** 10자를 초과하는 코드나 중복된 코드는 생성할 수 없습니다.
+
+   ```bash
+   curl -H "custom: custom123" -F "file=@secret.txt" http://localhost:8080/
+   ```
   
 10. **업로드 응답 형식**: 업로드가 성공하면 URL, 만료 시간, 삭제 링크가 반환됩니다. 비밀번호 링크인 경우 `password` 항목도 함께 반환됩니다.
 
