@@ -657,7 +657,7 @@ func generatePassword(length int) (string, error) {
 	upper := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	lower := "abcdefghijklmnopqrstuvwxyz"
 	digits := "0123456789"
-	special := "!@#$%^&*_-+=?{}[]"
+	special := "!@#$%^&*_-+?{}[]"
 	all := upper + lower + digits + special
 
 	result := make([]byte, 0, length)
