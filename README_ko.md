@@ -50,21 +50,22 @@ pastebox/
 
 2. **텍스트 업로드**: **echo, cat (cat << EOF)**와 같은 Linux 명령어와 연계하여 텍스트를 직접 업로드할 수 있습니다.
 
-   ```
+   ```bash
    echo "hello" | curl -X POST --data-binary @- http://localhost:8080/
    ```
 
 3. **파일 업로드**: `multipart/form-data` 형식의 파일 업로드를 지원합니다.
 
-   ```
+   ```bash
    curl -F "file=@test.txt" http://localhost:8080/
    ```
 
 4. **영구 저장**: `data-policy: permanent` 헤더를 사용하면 자동 삭제 대상에서 제외되어 영구 저장됩니다.
 
-   ```
+   ```bash
    curl -H "data-policy: permanent" -F "file=@test.txt" http://localhost:8080/
    ```
+   
    ```json
    // 저장 경로: ./data/코드.json
 
@@ -80,9 +81,10 @@ pastebox/
 
 5. **일회성 저장**: `data-policy: once` 헤더를 사용하면 일회성으로 저장되며 사용자가 확인한 경우 자동으로 삭제됩니다.
 
-   ```
+   ```bash
    curl -H "data-policy: once" -F "file=@test.txt" http://localhost:8080/
    ```
+   
    ```json
    {
     "id": "code",
@@ -105,17 +107,13 @@ pastebox/
 
 7. **수동 삭제**: 업로드 시 발급되는 삭제 URL을 사용하여 파일을 직접 삭제할 수 있습니다. 삭제 요청은 컨테이너 로그에도 기록됩니다.
 
-   ```
-   # 파일 삭제
+   ```bash
    curl "http://localhost:8080/RANDOM_CODE?delete=DELETE_TOKEN"
-   ```
-   ```
-   deleted
    ```
 
 8. **비밀번호 링크**: `usepassword: true` 헤더를 사용한 비공개 업로드 링크 생성을 지원합니다. 헤더 사용 시 **영문 대문자 + 영문 소문자 + 숫자 + 특수문자** 조합으로 생성된 8자리 비밀번호가 발급됩니다. 파일은 `?password=...` 쿼리 파라미터 또는 `paste-password: ...` 헤더를 사용하여 바로 확인하거나 브라우저에서 접근 시 직접 비밀번호를 입력하여 확인할 수 있습니다.
 
-   ```
+   ```bash
    # 비밀번호 링크 생성
    curl -H "usepassword: true" -F "file=@secret.txt" http://localhost:8080/
 
@@ -129,7 +127,13 @@ pastebox/
    ![](./preview2.png)
    ![](./preview3.png)
 
-9. **업로드 응답 형식**: 업로드가 성공하면 URL, 만료 시간, 삭제 링크가 반환됩니다. 비밀번호 링크인 경우 `password` 항목도 함께 반환됩니다.
+9. **Custom Code**: You can use the `custom: ...` header to create a link with a code of your choice instead of a randomly generated code. **Uppercase and lowercase English letters, numbers, and the special characters `_` and `-` are supported.** Codes longer than 10 characters or duplicate codes cannot be created.
+  
+  ```bash
+  curl -H "custom: custom123" -F "file=@secret.txt" http://localhost:8080/
+  ```
+  
+10. **업로드 응답 형식**: 업로드가 성공하면 URL, 만료 시간, 삭제 링크가 반환됩니다. 비밀번호 링크인 경우 `password` 항목도 함께 반환됩니다.
 
    ```
    url: http://localhost:8080/RANDOM_CODE
@@ -138,22 +142,22 @@ pastebox/
    delete: http://localhost:8080/RANDOM_CODE?delete=DELETE_TOKEN
    ```
 
-10. **브라우저에서 내용 복사**: 텍스트 기반 업로드 링크를 브라우저에서 열면 `Raw` 버튼 옆의 `Copy` 버튼으로 내용을 클립보드에 복사할 수 있습니다.
+11. **브라우저에서 내용 복사**: 텍스트 기반 업로드 링크를 브라우저에서 열면 `Raw` 버튼 옆의 `Copy` 버튼으로 내용을 클립보드에 복사할 수 있습니다.
 
-11. **텍스트 파일 브라우저 표시**: `.txt`, `.log` 같은 텍스트 기반 파일은 다운로드되지 않고 브라우저에서 바로 표시됩니다. 원본 raw 응답이 필요하면 `?raw=1`을 사용할 수 있습니다.
+12. **텍스트 파일 브라우저 표시**: `.txt`, `.log` 같은 텍스트 기반 파일은 다운로드되지 않고 브라우저에서 바로 표시됩니다. 원본 raw 응답이 필요하면 `?raw=1`을 사용할 수 있습니다.
 
-12. **생성/삭제 로그**: 파일 생성 및 삭제 시 컨테이너 로그에 기록됩니다.
+13. **생성/삭제 로그**: 파일 생성 및 삭제 시 컨테이너 로그에 기록됩니다.
 
    ```
    created: id=AbC12 remote=127.0.0.1:51234 size=123 content_type="text/plain; charset=utf-8" policy=temporary expires=2026-06-24T05:10:26Z protected=false
    deleted: id=AbC12 remote=127.0.0.1:51234
    ```
 
-13. **세분화된 락 매니저**: 업로드 ID별로 락을 적용하여 같은 파일에 대한 조회, 삭제, 만료 정리 작업이 동시에 발생해도 충돌을 줄입니다. 서로 다른 파일은 병렬로 처리됩니다.
+14. **세분화된 락 매니저**: 업로드 ID별로 락을 적용하여 같은 파일에 대한 조회, 삭제, 만료 정리 작업이 동시에 발생해도 충돌을 줄입니다. 서로 다른 파일은 병렬로 처리됩니다.
 
-14. **관리 페이지 제공**: IP, 도메인 뒤에 `/admin`을 추가하여 관리페이지 접근이 가능합니다. 계정이 없는 경우 첫 생성된 계정이 관리자로 들어가며 이후 신규생성이 중단됩니다. DB의 경우 `/paste-data/pastebox.db (호스트의 경우 ./data/pastebox.db)`에 기록되며 비밀번호의 경우 암호화되어 저장됩니다.
+15. **관리 페이지 제공**: IP, 도메인 뒤에 `/admin`을 추가하여 관리페이지 접근이 가능합니다. 계정이 없는 경우 첫 생성된 계정이 관리자로 들어가며 이후 신규생성이 중단됩니다. DB의 경우 `/paste-data/pastebox.db (호스트의 경우 ./data/pastebox.db)`에 기록되며 비밀번호의 경우 암호화되어 저장됩니다.
 
-15. **문법 강조 지원**: 확장자가 `.txt`, `.md`, `.log`, `.csv`, `.go`, `.rs`, `.js`, `.py`, `.ts`, `.php`, `.html`, `.css`인 경우 문법 강조(Syntax Highlighting)을 지원합니다.
+16. **문법 강조 지원**: 확장자가 `.txt`, `.md`, `.log`, `.csv`, `.go`, `.rs`, `.js`, `.py`, `.ts`, `.php`, `.html`, `.css`인 경우 문법 강조(Syntax Highlighting)을 지원합니다.
 
 ### 데이터 정책
 데이터 정책 헤더에 대한 설명은 [DATA_POLICY_ko.md](./DATA_POLICY_ko.md)를 참고하세요.

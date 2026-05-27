@@ -47,19 +47,23 @@ pastebox/
 1. **Automatic File Deletion**: Uploaded files are automatically deleted 30 days after upload.
 
 2. **Text Upload**: You can upload text directly by combining Pastebox with Linux commands such as **echo** and **cat (cat << EOF)**.
-   ```
+
+   ```bash
    echo "hello" | curl -X POST --data-binary @- http://localhost:8080/
    ```
 
 3. **File Upload**: Supports file uploads using the `multipart/form-data` format.
-   ```
+
+   ```bash
    curl -F "file=@test.txt" http://localhost:8080/
    ```
 
 4. **Permanent Storage**: Use the `data-policy: permanent` header to exclude an uploaded file from automatic deletion and store it permanently.
-   ```
+
+   ```bash
    curl -H "data-policy: permanent" -F "file=@test.txt" http://localhost:8080/
    ```
+   
    ```json
    // Storage path: ./data/code.json
 
@@ -74,9 +78,11 @@ pastebox/
    ```
 
 5. **One-time storage**: When the `data-policy: once` header is used, the data is stored only once and is automatically deleted once the user has confirmed it.
-   ```
+
+   ```bash
    curl -H "data-policy: once" -F "file=@test.txt" http://localhost:8080/
    ```
+
    ```json
    {
     "id": "code",
@@ -90,6 +96,7 @@ pastebox/
    ```
 
 6. **Expiration Information**: Temporary uploads include an `expires` field in the response so you can check when the file will expire. If `data-policy: permanent` is used, the expiration date is not shown.
+
    ```
    url: http://localhost:8080/RANDOM_CODE
    expires: 2026-06-24T05:10:26Z
@@ -97,17 +104,14 @@ pastebox/
    ```
 
 7. **Manual Deletion**: Each upload returns a delete URL. You can use this URL to manually delete the uploaded file. Deletion requests are also recorded in the container logs.
-   ```
-   # Delete file
+
+   ```bash
    curl "http://localhost:8080/RANDOM_CODE?delete=DELETE_TOKEN"
-   ```
-   ```
-   deleted
    ```
 
 8. **Password-Protected Links**: Private upload link creation using the `usepassword: true` header is supported. When this header is used, an 8-character password is issued, generated from a combination of uppercase English letters, lowercase English letters, numbers, and special characters. Files can be viewed directly using the `?password=...` query parameter or the `paste-password: ...` header, or by entering the password manually when accessing the link in a browser.
 
-   ```
+   ```bash
    # Create password-protected link
    curl -H "usepassword: true" -F "file=@secret.txt" http://localhost:8080/
 
@@ -121,7 +125,9 @@ pastebox/
    ![](./preview2.png)
    ![](./preview3.png)
 
-9. **Upload Response Format**: When an upload succeeds, Pastebox returns the URL, expiration time, and delete link. If the upload is password-protected, the `password` field is also included.
+9. 
+
+10. **Upload Response Format**: When an upload succeeds, Pastebox returns the URL, expiration time, and delete link. If the upload is password-protected, the `password` field is also included.
 
    ```
    url: http://localhost:8080/RANDOM_CODE
@@ -130,22 +136,22 @@ pastebox/
    delete: http://localhost:8080/RANDOM_CODE?delete=DELETE_TOKEN
    ```
 
-10. **Copy Content in Browser**: When opening a text-based upload link in the browser, you can copy the content to your clipboard using the `Copy` button next to the `Raw` button.
+11. **Copy Content in Browser**: When opening a text-based upload link in the browser, you can copy the content to your clipboard using the `Copy` button next to the `Raw` button.
 
-11. **Text File Rendering in Browser**: Text-based files such as `.txt` and `.log` are displayed directly in the browser instead of being downloaded. If you need the original raw response, use `?raw=1`.
+12. **Text File Rendering in Browser**: Text-based files such as `.txt` and `.log` are displayed directly in the browser instead of being downloaded. If you need the original raw response, use `?raw=1`.
 
-12. **Creation and Deletion Logs**: File creation and deletion events are recorded in the container logs.
+13. **Creation and Deletion Logs**: File creation and deletion events are recorded in the container logs.
 
    ```
    created: id=AbC12 remote=127.0.0.1:51234 size=123 content_type="text/plain; charset=utf-8" policy=temporary expires=2026-06-24T05:10:26Z protected=false
    deleted: id=AbC12 remote=127.0.0.1:51234
    ```
 
-13. **Fine-Grained Lock Manager**: Pastebox applies locks per upload ID to reduce conflicts when viewing, deleting, or cleaning up the same file concurrently. Different files can still be processed in parallel.
+14. **Fine-Grained Lock Manager**: Pastebox applies locks per upload ID to reduce conflicts when viewing, deleting, or cleaning up the same file concurrently. Different files can still be processed in parallel.
 
-14. **Admin Page**: You can access the admin page by adding `/admin` after the IP address or domain. If no account exists, the first created account becomes the administrator account, and additional account creation is disabled afterward. The admin database is stored at `/paste-data/pastebox.db` inside the container, or `./data/pastebox.db` on the host. Passwords are stored in encrypted form.
+15. **Admin Page**: You can access the admin page by adding `/admin` after the IP address or domain. If no account exists, the first created account becomes the administrator account, and additional account creation is disabled afterward. The admin database is stored at `/paste-data/pastebox.db` inside the container, or `./data/pastebox.db` on the host. Passwords are stored in encrypted form.
 
-15. **Syntax Highlighting Support**: Syntax highlighting is supported for files with the extensions `.txt`, `.md`, `.log`, `.csv`, `.go`, `.rs`, `.js`, `.py`, `.ts`, `.php`, `.html`, and `.css`.
+16. **Syntax Highlighting Support**: Syntax highlighting is supported for files with the extensions `.txt`, `.md`, `.log`, `.csv`, `.go`, `.rs`, `.js`, `.py`, `.ts`, `.php`, `.html`, and `.css`.
 
 ### Data Policy
 For details about the data policy header, see [DATA_POLICY.md](./DATA_POLICY.md)
