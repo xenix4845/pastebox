@@ -37,6 +37,9 @@ pastebox/
 ```
 
 ### 어떻게 사용하나요?
+> [!IMPORTANT]
+> Timezone 기본값이 Asia/Seoul로 되어있습니다. 현재 거주하는 국가에 맞게 설정하세요.
+
 1. 저장소를 클론하거나 `.zip` 파일로 다운로드하세요.
 2. Docker compose를 사용하여 서비스를 구동하세요. `docker compose up -d --build`로 로컬 빌드 후 실행할 수도 있으며, 미리디 빌드된 이미지를 사용할 수도 있습니다. 빌드된 이미지를 사용하려면 `docker-compose-dockerhub.yml`을 사용하세요.
 3. `http://localhost:3000`를 브라우저에서 접속하거나 NGINX, Caddy, Traefik을 통해 리버스 프록시를 구축하여 도메인으로 접속하세요. 정상적으로 구동이 되었다면 `curl`을 사용하여 이용할 수 있습니다.
