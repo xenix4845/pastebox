@@ -40,13 +40,37 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Using tag: $TAG"
 
-      - name: Set previous tag
-        id: previous
+      - name: Generate release notes
         shell: bash
         run: |
-          PREVIOUS_TAG="$(git tag --sort=-creatordate | head -n 1 || true)"
-          echo "tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
-          echo "Previous tag: $PREVIOUS_TAG"
+          TAG="${{ steps.version.outputs.tag }}"
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+
+          {
+            echo "## Docker Images"
+            echo
+            echo "- \`kmw0410/pastebox:latest\`"
+            echo "- \`kmw0410/pastebox:${TAG}\`"
+            echo
+            echo "## Changes"
+            echo
+
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+              git log "${BEFORE}..${AFTER}" --pretty=format:"- %s (%h)" --no-merges
+            else
+              git log -1 --pretty=format:"- %s (%h)" --no-merges
+            fi
+
+            echo
+            echo
+            echo "## Supported Platforms"
+            echo
+            echo "- linux/amd64"
+            echo "- linux/arm64"
+          } > release-notes.md
+
+          cat release-notes.md
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -70,38 +94,6 @@ jobs:
           tags: |
             kmw0410/pastebox:latest
             kmw0410/pastebox:${{ steps.version.outputs.tag }}
-
-      - name: Generate release notes
-        id: notes
-        shell: bash
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          PREVIOUS_TAG="${{ steps.previous.outputs.tag }}"
-
-          {
-            echo "## Docker Images"
-            echo
-            echo "- \`kmw0410/pastebox:latest\`"
-            echo "- \`kmw0410/pastebox:${TAG}\`"
-            echo
-            echo "## Changes"
-            echo
-
-            if [ -n "$PREVIOUS_TAG" ]; then
-              git log "${PREVIOUS_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges
-            else
-              git log --pretty=format:"- %s (%h)" --no-merges
-            fi
-
-            echo
-            echo
-            echo "## Supported Platforms"
-            echo
-            echo "- linux/amd64"
-            echo "- linux/arm64"
-          } > release-notes.md
-
-          cat release-notes.md
 
       - name: Create git tag
         shell: bash
