@@ -6,7 +6,6 @@ on:
       - main
     paths-ignore:
       - "**/*.md"
-      - "docs/**"
       - "LICENSE"
   workflow_dispatch:
 
@@ -15,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout
@@ -41,6 +40,14 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Using tag: $TAG"
 
+      - name: Set previous tag
+        id: previous
+        shell: bash
+        run: |
+          PREVIOUS_TAG="$(git tag --sort=-creatordate | head -n 1 || true)"
+          echo "tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
+          echo "Previous tag: $PREVIOUS_TAG"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -63,3 +70,57 @@ jobs:
           tags: |
             kmw0410/pastebox:latest
             kmw0410/pastebox:${{ steps.version.outputs.tag }}
+
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          PREVIOUS_TAG="${{ steps.previous.outputs.tag }}"
+
+          {
+            echo "## Docker Images"
+            echo
+            echo "- \`kmw0410/pastebox:latest\`"
+            echo "- \`kmw0410/pastebox:${TAG}\`"
+            echo
+            echo "## Changes"
+            echo
+
+            if [ -n "$PREVIOUS_TAG" ]; then
+              git log "${PREVIOUS_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges
+            else
+              git log --pretty=format:"- %s (%h)" --no-merges
+            fi
+
+            echo
+            echo
+            echo "## Supported Platforms"
+            echo
+            echo "- linux/amd64"
+            echo "- linux/arm64"
+          } > release-notes.md
+
+          cat release-notes.md
+
+      - name: Create git tag
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-notes.md
