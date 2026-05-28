@@ -22,8 +22,10 @@ curl 기반 파일 공유 서비스
 pastebox/
 ├── Dockerfile
 ├── docker-compose.yml
+├── docker-compose-dockerhub.yml
 ├── docker-entrypoint.sh
 ├── go.mod
+├── go.sum
 ├── README.md
 ├── README_ko.md
 ├── cmd/
@@ -33,7 +35,13 @@ pastebox/
 │   ├── metadata.go
 │   └── store.go
 └── templates/
-    └── index.html
+    ├── 404.html
+    ├── admin_form.html
+    ├── admin_list.html
+    ├── clone.html
+    ├── index.html
+    ├── password.html
+    └── paste.html
 ```
 
 ### 어떻게 사용하나요?
