@@ -27,6 +27,7 @@ type app struct {
 	adminList    *template.Template
 	passwordPage *template.Template
 	notFoundPage *template.Template
+	cloneResult  *template.Template
 }
 
 const maxUploadSize int64 = 1 << 30 // 1 GiB
@@ -49,6 +50,7 @@ func main() {
 		adminList:    mustParseTemplate("templates/admin_list.html"),
 		passwordPage: mustParseTemplate("templates/password.html"),
 		notFoundPage: mustParseTemplate("templates/404.html"),
+		cloneResult:  mustParseTemplate("templates/clone.html"),
 	}
 
 	go func() {
@@ -91,14 +93,19 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	id := strings.TrimPrefix(r.URL.Path, "/")
 	if strings.Contains(id, "/") || id == "" {
 		a.notFoundHandler(w, r)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		a.cloneHandler(w, r, id)
+		return
+	}
+
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -124,6 +131,18 @@ func (a *app) indexHandler(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+
+	disabled, err := a.store.UploadsDisabled()
+	if err != nil {
+		log.Printf("failed to read upload status: %v", err)
+		http.Error(w, "upload status unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	if disabled {
+		http.Error(w, "new uploads are currently disabled", http.StatusServiceUnavailable)
+		return
+	}
 
 	var reader io.Reader
 	var filename string
@@ -214,8 +233,6 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := strings.TrimRight(requestBaseURL(r), "/") + "/" + meta.ID
-
 	log.Printf(
 		"created: id=%s remote=%s size=%d content_type=%q policy=%s expires=%s protected=%t",
 		meta.ID,
@@ -227,19 +244,114 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		password != "",
 	)
 
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	a.writeUploadResponse(w, r, meta, password, deleteToken)
+}
 
+func (a *app) writeUploadResponse(w http.ResponseWriter, r *http.Request, meta pastebox.Metadata, password string, deleteToken string) {
+	a.writeUploadResponseWithMode(w, r, meta, password, deleteToken, false)
+}
+
+func (a *app) writeCloneResponse(w http.ResponseWriter, r *http.Request, meta pastebox.Metadata, password string, deleteToken string) {
+	a.writeUploadResponseWithMode(w, r, meta, password, deleteToken, true)
+}
+
+func (a *app) writeUploadResponseWithMode(w http.ResponseWriter, r *http.Request, meta pastebox.Metadata, password string, deleteToken string, clone bool) {
+	url := strings.TrimRight(requestBaseURL(r), "/") + "/" + meta.ID
+	deleteURL := url + "?delete=" + deleteToken
+
+	expires := ""
+	if !strings.EqualFold(meta.DataPolicy, "permanent") && !meta.ExpiresAt.IsZero() {
+		expires = meta.ExpiresAt.Format(time.RFC3339)
+	}
+
+	if clone && isBrowserRequest(r) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+
+		_ = a.cloneResult.Execute(w, map[string]any{
+			"URL":       url,
+			"Expires":   expires,
+			"Password":  password,
+			"DeleteURL": deleteURL,
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprintf(w, "url: %s\n", url)
 
-	if !strings.EqualFold(meta.DataPolicy, "permanent") && !meta.ExpiresAt.IsZero() {
-		fmt.Fprintf(w, "expires: %s\n", meta.ExpiresAt.Format(time.RFC3339))
+	if expires != "" {
+		fmt.Fprintf(w, "expires: %s\n", expires)
 	}
 
 	if password != "" {
 		fmt.Fprintf(w, "password: %s\n", password)
 	}
 
-	fmt.Fprintf(w, "delete: %s?delete=%s\n", url, deleteToken)
+	fmt.Fprintf(w, "delete: %s\n", deleteURL)
+}
+
+func (a *app) cloneHandler(w http.ResponseWriter, r *http.Request, id string) {
+	disabled, err := a.store.UploadsDisabled()
+	if err != nil {
+		log.Printf("failed to read upload status: %v", err)
+		http.Error(w, "upload status unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	if disabled {
+		http.Error(w, "new uploads are currently disabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	password := r.FormValue("password")
+	if password == "" {
+		password = r.URL.Query().Get("password")
+	}
+	if password == "" {
+		password = r.Header.Get("paste-password")
+	}
+
+	usePassword := strings.EqualFold(strings.TrimSpace(r.Header.Get("usepassword")), "true")
+	policy := strings.ToLower(strings.TrimSpace(r.Header.Get("data-policy")))
+	permanent := policy == "permanent"
+	once := policy == "once"
+	customCode := strings.TrimSpace(r.Header.Get("code"))
+
+	meta, newPassword, deleteToken, err := a.store.Clone(id, password, usePassword, permanent, once, customCode)
+	if err != nil {
+		if errors.Is(err, pastebox.ErrInvalidPassword) {
+			http.Error(w, "password required or invalid. use ?password=... or paste-password header", http.StatusUnauthorized)
+			return
+		}
+
+		if errors.Is(err, pastebox.ErrInvalidCode) {
+			http.Error(w, "invalid code. use 1-10 characters: letters, numbers, underscore, or hyphen", http.StatusBadRequest)
+			return
+		}
+
+		if errors.Is(err, pastebox.ErrCodeExists) {
+			http.Error(w, "code already exists", http.StatusConflict)
+			return
+		}
+
+		http.NotFound(w, r)
+		return
+	}
+
+	log.Printf(
+		"cloned: source=%s id=%s remote=%s size=%d content_type=%q policy=%s expires=%s protected=%t",
+		id,
+		meta.ID,
+		r.RemoteAddr,
+		meta.Size,
+		meta.ContentType,
+		meta.DataPolicy,
+		formatExpiresForLog(meta),
+		newPassword != "",
+	)
+
+	a.writeCloneResponse(w, r, meta, newPassword, deleteToken)
 }
 
 func (a *app) deleteHandler(w http.ResponseWriter, r *http.Request, id string, token string) {
@@ -299,6 +411,7 @@ func (a *app) viewHandler(w http.ResponseWriter, r *http.Request, id string) {
 			"ID":       entry.Meta.ID,
 			"Content":  string(content),
 			"Language": syntaxLanguage(entry.Meta.ContentType),
+			"Password": password,
 		})
 		return
 	}
@@ -363,6 +476,8 @@ func (a *app) adminHandler(w http.ResponseWriter, r *http.Request) {
 		a.adminLogoutHandler(w, r)
 	case "/admin/delete":
 		a.adminDeleteHandler(w, r)
+	case "/admin/uploads":
+		a.adminUploadsHandler(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -390,10 +505,17 @@ func (a *app) adminIndexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	uploadsDisabled, err := a.store.UploadsDisabled()
+	if err != nil {
+		http.Error(w, "failed to read upload status", http.StatusInternalServerError)
+		return
+	}
+
 	data := map[string]any{
-		"Items":   items,
-		"Stats":   buildAdminStats(items),
-		"BaseURL": requestBaseURL(r),
+		"Items":           items,
+		"Stats":           buildAdminStats(items),
+		"BaseURL":         requestBaseURL(r),
+		"UploadsDisabled": uploadsDisabled,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -579,6 +701,33 @@ func (a *app) adminLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+}
+
+func (a *app) adminUploadsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAdmin(w, r) {
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	disabled := r.FormValue("disabled") == "true"
+
+	if err := a.store.SetUploadsDisabled(disabled); err != nil {
+		http.Error(w, "failed to update upload status", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("admin upload status changed: disabled=%t remote=%s", disabled, r.RemoteAddr)
+
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 func (a *app) adminDeleteHandler(w http.ResponseWriter, r *http.Request) {

@@ -28,6 +28,17 @@
         >
           Copy
         </button>
+        <form method="post" action="/{{ .ID }}">
+          {{ if .Password }}
+          <input type="hidden" name="password" value="{{ .Password }}">
+          {{ end }}
+          <button
+            type="submit"
+            class="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
+          >
+            Clone
+          </button>
+        </form>
         <button
           id="lineToggle"
           type="button"

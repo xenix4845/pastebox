@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clone Created - Pastebox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-[#111111] text-zinc-100">
+  <main class="mx-auto flex min-h-screen max-w-xl items-center justify-center px-6 py-12 text-center">
+    <section class="w-full">
+      <p class="text-sm uppercase tracking-[0.3em] text-zinc-600">Clone created</p>
+      <h1 class="mt-4 text-4xl font-bold tracking-tight text-white">Paste cloned</h1>
+      <p class="mt-4 text-sm leading-6 text-zinc-500">A new paste link has been created from the current content.</p>
+
+      <div class="mt-8 space-y-3 text-left">
+        <div class="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <p class="text-xs uppercase tracking-[0.18em] text-zinc-600">URL</p>
+          <a class="mt-2 block break-all font-mono text-sm text-zinc-200 underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-100" href="{{ .URL }}">{{ .URL }}</a>
+        </div>
+
+        {{ if .Expires }}
+        <div class="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <p class="text-xs uppercase tracking-[0.18em] text-zinc-600">Expires</p>
+          <p class="mt-2 break-all font-mono text-sm text-zinc-300">{{ .Expires }}</p>
+        </div>
+        {{ end }}
+
+        {{ if .Password }}
+        <div class="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <p class="text-xs uppercase tracking-[0.18em] text-zinc-600">Password</p>
+          <p class="mt-2 break-all font-mono text-sm text-zinc-300">{{ .Password }}</p>
+        </div>
+        {{ end }}
+
+        <div class="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <p class="text-xs uppercase tracking-[0.18em] text-zinc-600">Delete</p>
+          <p class="mt-2 break-all font-mono text-sm text-zinc-300">{{ .DeleteURL }}</p>
+        </div>
+      </div>
+
+      <div class="mt-8 flex flex-wrap justify-center gap-3">
+        <a class="rounded-xl bg-zinc-100 px-4 py-2 font-semibold text-zinc-950 transition hover:bg-white" href="{{ .URL }}">Open paste</a>
+        <button
+          class="rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:text-white"
+          type="button"
+          onclick="copyCloneInfo()"
+          id="copyCloneButton"
+        >
+          Copy info
+        </button>
+        <a class="rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:text-white" href="/">Home</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    async function copyCloneInfo() {
+      const button = document.getElementById("copyCloneButton");
+      const text = [
+        "url: {{ .URL }}",
+        {{ if .Expires }}"expires: {{ .Expires }}",{{ end }}
+        {{ if .Password }}"password: {{ .Password }}",{{ end }}
+        "delete: {{ .DeleteURL }}"
+      ].join("\n");
+
+      try {
+        await navigator.clipboard.writeText(text);
+        button.innerText = "Copied";
+      } catch (error) {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        button.innerText = "Copied";
+      }
+
+      setTimeout(() => {
+        button.innerText = "Copy info";
+      }, 1500);
+    }
+  </script>
+</body>
+</html>

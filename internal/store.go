@@ -79,6 +79,20 @@ func NewStore(dataDir string, ttl time.Duration) (*Store, error) {
 }
 
 func (s *Store) Create(r io.Reader, contentType string, usePassword bool, permanent bool, once bool, customCode string) (Metadata, string, string, error) {
+	return s.createFromReader(r, contentType, usePassword, permanent, once, customCode)
+}
+
+func (s *Store) Clone(id string, password string, usePassword bool, permanent bool, once bool, customCode string) (Metadata, string, string, error) {
+	entry, err := s.Open(id, password)
+	if err != nil {
+		return Metadata{}, "", "", err
+	}
+	defer entry.File.Close()
+
+	return s.createFromReader(entry.File, entry.Meta.ContentType, usePassword, permanent, once, customCode)
+}
+
+func (s *Store) createFromReader(r io.Reader, contentType string, usePassword bool, permanent bool, once bool, customCode string) (Metadata, string, string, error) {
 	id, path, err := s.reservePath(customCode)
 	if err != nil {
 		return Metadata{}, "", "", err
@@ -151,6 +165,7 @@ func (s *Store) Create(r io.Reader, contentType string, usePassword bool, perman
 
 	return meta, password, deleteToken, nil
 }
+
 
 func (s *Store) Open(id string, password string) (*Entry, error) {
 	if !validID(id) {
@@ -448,6 +463,12 @@ func openAdminDB(path string) (*sql.DB, error) {
 			created_at_unix INTEGER NOT NULL,
 			expires_at_unix INTEGER NOT NULL
 		);
+
+		CREATE TABLE IF NOT EXISTS pastebox_settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at_unix INTEGER NOT NULL
+		);
 	`)
 	if err != nil {
 		_ = db.Close()
@@ -592,6 +613,46 @@ func (s *Store) DeleteAdminSession(token string) error {
 		DELETE FROM admin_sessions
 		WHERE token_hash = ?
 	`, hashSecret(token))
+
+	return err
+}
+
+func (s *Store) UploadsDisabled() (bool, error) {
+	var value string
+
+	err := s.adminDB.QueryRow(`
+		SELECT value
+		FROM pastebox_settings
+		WHERE key = 'uploads_disabled'
+	`).Scan(&value)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	return value == "true", nil
+}
+
+func (s *Store) SetUploadsDisabled(disabled bool) error {
+	value := "false"
+	if disabled {
+		value = "true"
+	}
+
+	_, err := s.adminDB.Exec(`
+		INSERT INTO pastebox_settings (
+			key,
+			value,
+			updated_at_unix
+		) VALUES ('uploads_disabled', ?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			value = excluded.value,
+			updated_at_unix = excluded.updated_at_unix
+	`, value, time.Now().UTC().Unix())
 
 	return err
 }
