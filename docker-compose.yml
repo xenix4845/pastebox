@@ -6,9 +6,8 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-    environment:
-      DATA_DIR: "/paste-data"
-      LISTEN_ADDR: ":8080"
-      TZ: "Asia/Seoul"
+    # NOTE: The default time zone is Asia/Seoul (GMT +9). Change it as needed.
+    #environment:
+    #  TZ: "Asia/Seoul"
     volumes:
       - ./data:/paste-data

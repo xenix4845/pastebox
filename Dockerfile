@@ -45,6 +45,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENV LISTEN_ADDR=:8080
 ENV DATA_DIR=/paste-data
 ENV EXPIRE_DAYS=30
+ENV TZ=Asia/Seoul
 
 EXPOSE 8080
 
