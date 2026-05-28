@@ -20,8 +20,13 @@ import (
 )
 
 type app struct {
-	store *pastebox.Store
-	index *template.Template
+	store        *pastebox.Store
+	index        *template.Template
+	paste        *template.Template
+	adminForm    *template.Template
+	adminList    *template.Template
+	passwordPage *template.Template
+	notFoundPage *template.Template
 }
 
 const maxUploadSize int64 = 1 << 30 // 1 GiB
@@ -36,14 +41,14 @@ func main() {
 		log.Fatalf("failed to initialize store: %v", err)
 	}
 
-	indexTemplate, err := template.ParseFiles("templates/index.html")
-	if err != nil {
-		indexTemplate = template.Must(template.New("index").Parse(fallbackIndexHTML))
-	}
-
 	a := &app{
-		store: store,
-		index: indexTemplate,
+		store:        store,
+		index:        mustParseTemplate("templates/index.html"),
+		paste:        mustParseTemplate("templates/paste.html"),
+		adminForm:    mustParseTemplate("templates/admin_form.html"),
+		adminList:    mustParseTemplate("templates/admin_list.html"),
+		passwordPage: mustParseTemplate("templates/password.html"),
+		notFoundPage: mustParseTemplate("templates/404.html"),
 	}
 
 	go func() {
@@ -290,7 +295,7 @@ func (a *app) viewHandler(w http.ResponseWriter, r *http.Request, id string) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 
-		_ = pasteViewHTML.Execute(w, map[string]any{
+		_ = a.paste.Execute(w, map[string]any{
 			"ID":       entry.Meta.ID,
 			"Content":  string(content),
 			"Language": syntaxLanguage(entry.Meta.ContentType),
@@ -326,7 +331,7 @@ func (a *app) passwordRequiredHandler(w http.ResponseWriter, r *http.Request, id
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
 
-	_ = passwordPageHTML.Execute(w, map[string]any{
+	_ = a.passwordPage.Execute(w, map[string]any{
 		"ID":     id,
 		"Action": "/" + id,
 	})
@@ -341,7 +346,7 @@ func (a *app) notFoundHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusNotFound)
 
-	_ = notFoundPageHTML.Execute(w, map[string]any{
+	_ = a.notFoundPage.Execute(w, map[string]any{
 		"Path": r.URL.Path,
 	})
 }
@@ -392,7 +397,7 @@ func (a *app) adminIndexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := adminListHTML.Execute(w, data); err != nil {
+	if err := a.adminList.Execute(w, data); err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }
@@ -621,7 +626,7 @@ func (a *app) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 func (a *app) renderAdminForm(w http.ResponseWriter, title string, action string, errorMessage string, button string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	_ = adminFormHTML.Execute(w, map[string]any{
+	_ = a.adminForm.Execute(w, map[string]any{
 		"Title": title,
 		"Action": action,
 		"Error": errorMessage,
@@ -953,6 +958,15 @@ func formatExpiresForLog(meta pastebox.Metadata) string {
 	return meta.ExpiresAt.Format(time.RFC3339)
 }
 
+func mustParseTemplate(path string) *template.Template {
+	tpl, err := template.ParseFiles(path)
+	if err != nil {
+		log.Fatalf("failed to parse template %s: %v", path, err)
+	}
+
+	return tpl
+}
+
 func getenv(key string, fallback string) string {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -974,340 +988,3 @@ func getenvInt(key string, fallback int) int {
 
 	return n
 }
-
-var pasteViewHTML = template.Must(template.New("paste").Parse(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ .ID }} - Pastebox</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
-</head>
-<body class="min-h-screen bg-[#111111] text-zinc-100">
-  <header class="sticky top-0 z-10 border-b border-white/10 bg-[#111111]/95 backdrop-blur">
-    <div class="mx-auto flex max-w-screen-2xl items-center justify-between gap-4 px-6 py-4">
-      <div class="min-w-0">
-        <p class="text-xs uppercase tracking-[0.24em] text-zinc-500">Pastebox</p>
-        <div class="flex min-w-0 items-center gap-3">
-          <h1 class="truncate font-mono text-lg font-semibold text-zinc-100">{{ .ID }}</h1>
-          <span class="rounded-full border border-white/10 px-2 py-0.5 text-xs text-zinc-500">{{ .Language }}</span>
-        </div>
-      </div>
-
-      <div class="flex shrink-0 items-center gap-2">
-        <button
-          id="copyButton"
-          type="button"
-          class="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
-          onclick="copyPasteContent()"
-        >
-          Copy
-        </button>
-        <button
-          id="lineToggle"
-          type="button"
-          class="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
-          onclick="toggleLineNumbers()"
-          aria-pressed="false"
-        >
-          Line numbers
-        </button>
-        <a
-          class="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
-          href="?raw=1"
-        >
-          Raw
-        </a>
-      </div>
-    </div>
-  </header>
-
-  <main class="mx-auto max-w-screen-2xl px-6 py-6">
-    <div id="viewer" class="grid grid-cols-1 gap-4 overflow-x-auto font-mono text-sm leading-6">
-      <pre
-        id="lineNumbers"
-        aria-hidden="true"
-        class="hidden select-none border-r border-white/10 pr-4 text-right text-zinc-600"
-      ></pre>
-      <pre class="m-0 whitespace-pre text-zinc-200"><code id="pasteContent" class="language-{{ .Language }} bg-transparent p-0">{{ .Content }}</code></pre>
-    </div>
-  </main>
-
-  <script>
-    const viewer = document.getElementById("viewer");
-    const lineNumbers = document.getElementById("lineNumbers");
-    const lineToggle = document.getElementById("lineToggle");
-    const pasteContent = document.getElementById("pasteContent");
-    const rawText = pasteContent.textContent || "";
-
-    function renderLineNumbers() {
-      const lineCount = Math.max(1, rawText.split("\n").length);
-      lineNumbers.textContent = Array.from({ length: lineCount }, (_, index) => index + 1).join("\n");
-    }
-
-    function toggleLineNumbers() {
-      const enabled = lineNumbers.classList.toggle("hidden") === false;
-
-      viewer.classList.toggle("grid-cols-1", !enabled);
-      viewer.classList.toggle("grid-cols-[auto_1fr]", enabled);
-      lineToggle.classList.toggle("border-white/25", enabled);
-      lineToggle.classList.toggle("bg-white/[0.07]", enabled);
-      lineToggle.classList.toggle("text-white", enabled);
-      lineToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
-    }
-
-    renderLineNumbers();
-
-    if (window.hljs && "{{ .Language }}" !== "logs") {
-      hljs.highlightElement(pasteContent);
-    }
-
-    async function copyPasteContent() {
-      const button = document.getElementById("copyButton");
-      const content = rawText;
-
-      try {
-        await navigator.clipboard.writeText(content);
-        button.innerText = "Copied";
-      } catch (error) {
-        const textarea = document.createElement("textarea");
-        textarea.value = content;
-        textarea.setAttribute("readonly", "");
-        textarea.style.position = "fixed";
-        textarea.style.left = "-9999px";
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
-        button.innerText = "Copied";
-      }
-
-      setTimeout(() => {
-        button.innerText = "Copy";
-      }, 1500);
-    }
-  </script>
-</body>
-</html>`))
-
-var adminFormHTML = template.Must(template.New("admin-form").Parse(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ .Title }} - Pastebox</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="min-h-screen bg-[#111111] text-zinc-100">
-  <main class="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
-    <section class="rounded-2xl border border-white/10 bg-[#151515]/80 p-8 shadow-xl transition-all duration-300 ease-out hover:border-white/20 hover:bg-[#161616]/90 hover:shadow-[0_0_28px_rgba(255,255,255,0.06)]">
-      <p class="mb-3 inline-flex rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-400">Pastebox Admin</p>
-      <h1 class="text-3xl font-bold tracking-tight text-white">{{ .Title }}</h1>
-      <p class="mt-3 text-sm text-zinc-400">The first account becomes the only administrator account.</p>
-
-      {{ if .Error }}
-      <div class="mt-5 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">{{ .Error }}</div>
-      {{ end }}
-
-      <form class="mt-6 space-y-4" method="post" action="{{ .Action }}">
-        <div>
-          <label class="mb-2 block text-sm text-zinc-400">Username</label>
-          <input class="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-zinc-100 outline-none transition focus:border-white/30" name="username" autocomplete="username" required>
-        </div>
-        <div>
-          <label class="mb-2 block text-sm text-zinc-400">Password</label>
-          <input class="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-zinc-100 outline-none transition focus:border-white/30" name="password" type="password" autocomplete="current-password" required>
-        </div>
-        <button class="w-full rounded-xl bg-zinc-100 px-4 py-3 font-semibold text-zinc-950 transition hover:bg-white" type="submit">{{ .Button }}</button>
-      </form>
-    </section>
-  </main>
-</body>
-</html>`))
-
-var adminListHTML = template.Must(template.New("admin-list").Parse(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin - Pastebox</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="min-h-screen bg-[#111111] text-zinc-100">
-  <main class="mx-auto min-h-screen max-w-6xl px-6 py-12">
-    <section class="rounded-2xl border border-white/10 bg-[#151515]/80 p-8 shadow-xl transition-all duration-300 ease-out hover:border-white/20 hover:bg-[#161616]/90 hover:shadow-[0_0_28px_rgba(255,255,255,0.06)]">
-      <div class="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p class="mb-3 inline-flex rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-400">Pastebox Admin</p>
-          <h1 class="text-4xl font-bold tracking-tight text-white">Links</h1>
-          <p class="mt-3 text-sm text-zinc-400">Manage currently stored local paste files.</p>
-        </div>
-        <div class="flex gap-3">
-          <a class="rounded-xl border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/20 hover:text-white" href="/">Home</a>
-          <a class="rounded-xl border border-white/10 px-4 py-2 text-zinc-300 transition hover:border-white/20 hover:text-white" href="/admin/logout">Logout</a>
-        </div>
-      </div>
-
-      <div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="rounded-2xl border border-white/10 bg-black/25 p-5 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_0_24px_rgba(255,255,255,0.05)]">
-          <p class="text-xs uppercase tracking-[0.18em] text-zinc-500">Total Links</p>
-          <p class="mt-3 text-3xl font-bold text-white">{{ .Stats.Total }}</p>
-          <p class="mt-1 text-sm text-zinc-500">stored pastes</p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-black/25 p-5 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_0_24px_rgba(255,255,255,0.05)]">
-          <p class="text-xs uppercase tracking-[0.18em] text-zinc-500">Storage</p>
-          <p class="mt-3 text-3xl font-bold text-white">{{ .Stats.TotalSize }}</p>
-          <p class="mt-1 text-sm text-zinc-500">total size</p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-black/25 p-5 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_0_24px_rgba(255,255,255,0.05)]">
-          <p class="text-xs uppercase tracking-[0.18em] text-zinc-500">Policy</p>
-          <p class="mt-3 text-3xl font-bold text-white">{{ .Stats.Temporary }} / {{ .Stats.Permanent }}</p>
-          <p class="mt-1 text-sm text-zinc-500">temporary / permanent</p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-black/25 p-5 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.03] hover:shadow-[0_0_24px_rgba(255,255,255,0.05)]">
-          <p class="text-xs uppercase tracking-[0.18em] text-zinc-500">Security</p>
-          <p class="mt-3 text-3xl font-bold text-white">{{ .Stats.Protected }}</p>
-          <p class="mt-1 text-sm text-zinc-500">password-protected</p>
-        </div>
-      </div>
-
-      <div class="mb-8 grid gap-4 sm:grid-cols-2">
-        <div class="rounded-2xl border border-yellow-400/10 bg-yellow-500/[0.04] p-5">
-          <p class="text-xs uppercase tracking-[0.18em] text-yellow-200/60">Expiring Soon</p>
-          <p class="mt-3 text-2xl font-bold text-yellow-100">{{ .Stats.Expiring24h }}</p>
-          <p class="mt-1 text-sm text-yellow-100/50">temporary links expiring within 24 hours</p>
-        </div>
-        <div class="rounded-2xl border border-red-400/10 bg-red-500/[0.04] p-5">
-          <p class="text-xs uppercase tracking-[0.18em] text-red-200/60">Expired</p>
-          <p class="mt-3 text-2xl font-bold text-red-100">{{ .Stats.Expired }}</p>
-          <p class="mt-1 text-sm text-red-100/50">links waiting for cleanup</p>
-        </div>
-      </div>
-
-      <div class="overflow-x-auto rounded-2xl border border-white/10">
-        <table class="min-w-full divide-y divide-white/10 text-sm">
-          <thead class="bg-black/30 text-left text-xs uppercase tracking-wider text-zinc-500">
-            <tr>
-              <th class="px-4 py-3">Code</th>
-              <th class="px-4 py-3">Policy</th>
-              <th class="px-4 py-3">Size</th>
-              <th class="px-4 py-3">Protected</th>
-              <th class="px-4 py-3">Created</th>
-              <th class="px-4 py-3">Expires</th>
-              <th class="px-4 py-3">Action</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-white/10">
-            {{ range .Items }}
-            <tr class="transition hover:bg-white/[0.03]">
-              <td class="whitespace-nowrap px-4 py-3">
-                <a class="font-mono text-zinc-100 underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-100" href="{{ $.BaseURL }}/{{ .ID }}" target="_blank">{{ .ID }}</a>
-              </td>
-              <td class="whitespace-nowrap px-4 py-3 text-zinc-300">{{ .DataPolicy }}</td>
-              <td class="whitespace-nowrap px-4 py-3 text-zinc-300">{{ .Size }}</td>
-              <td class="whitespace-nowrap px-4 py-3 text-zinc-300">{{ .Protected }}</td>
-              <td class="whitespace-nowrap px-4 py-3 text-zinc-400">{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</td>
-              <td class="whitespace-nowrap px-4 py-3 text-zinc-400">{{ if .ExpiresAt.IsZero }}-{{ else }}{{ .ExpiresAt.Format "2006-01-02 15:04:05" }}{{ end }}</td>
-              <td class="whitespace-nowrap px-4 py-3">
-                <form method="post" action="/admin/delete" onsubmit="return confirm('Delete {{ .ID }}?')">
-                  <input type="hidden" name="id" value="{{ .ID }}">
-                  <button class="rounded-lg border border-red-400/20 px-3 py-1.5 text-red-200 transition hover:bg-red-500/10" type="submit">Delete</button>
-                </form>
-              </td>
-            </tr>
-            {{ else }}
-            <tr>
-              <td class="px-4 py-8 text-center text-zinc-500" colspan="7">No pastes found.</td>
-            </tr>
-            {{ end }}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </main>
-</body>
-</html>`))
-
-
-var passwordPageHTML = template.Must(template.New("password-page").Parse(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Password Required - Pastebox</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="min-h-screen bg-[#111111] text-zinc-100">
-  <main class="mx-auto flex min-h-screen max-w-md items-center justify-center px-6 py-12">
-    <section class="w-full rounded-2xl border border-white/10 bg-[#151515]/80 p-8 shadow-xl transition-all duration-300 ease-out hover:border-white/20 hover:bg-[#161616]/90 hover:shadow-[0_0_28px_rgba(255,255,255,0.06)]">
-      <p class="mb-3 inline-flex rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-400">Protected paste</p>
-      <h1 class="text-3xl font-bold tracking-tight text-white">Password required</h1>
-      <p class="mt-3 text-sm leading-6 text-zinc-400">Enter the password to view this paste.</p>
-
-      <form class="mt-6 space-y-4" method="get" action="{{ .Action }}">
-        <div>
-          <label class="mb-2 block text-sm text-zinc-400" for="password">Password</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autocomplete="current-password"
-            class="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-white/30"
-            placeholder="Enter paste password"
-            required
-          >
-        </div>
-
-        <button class="w-full rounded-xl bg-zinc-100 px-4 py-3 font-semibold text-zinc-950 transition hover:bg-white" type="submit">Open paste</button>
-      </form>
-
-      <div class="mt-5 flex justify-center">
-        <a class="text-sm text-zinc-500 transition hover:text-zinc-300" href="/">Back to home</a>
-      </div>
-    </section>
-  </main>
-</body>
-</html>`))
-
-var notFoundPageHTML = template.Must(template.New("not-found-page").Parse(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>404 - Pastebox</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="min-h-screen bg-[#111111] text-zinc-100">
-  <main class="mx-auto flex min-h-screen max-w-md items-center justify-center px-6 py-12 text-center">
-    <section class="w-full">
-      <p class="text-sm uppercase tracking-[0.3em] text-zinc-600">404</p>
-      <h1 class="mt-4 text-4xl font-bold tracking-tight text-white">Paste not found</h1>
-      <p class="mt-4 text-sm leading-6 text-zinc-500">The paste may not exist, may have expired, or may have already been deleted.</p>
-
-      <div class="mt-8">
-        <a class="inline-flex rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:border-white/20 hover:text-white" href="/">Back to home</a>
-      </div>
-    </section>
-  </main>
-</body>
-</html>`))
-
-const fallbackIndexHTML = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pastebox</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="min-h-screen bg-[#111111] text-gray-200">
-  <main class="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6">
-    <div class="rounded-2xl border border-gray-800 bg-[#151515] p-8 shadow-2xl">
-      <h1 class="text-3xl font-bold text-white">Pastebox</h1>
-      <p class="mt-3 text-gray-400">curl-based file sharing service</p>
-    </div>
-  </main>
-</body>
-</html>`
