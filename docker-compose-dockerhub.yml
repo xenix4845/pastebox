@@ -8,7 +8,7 @@ services:
     environment:
       # Optional. Set this only if you want to override Alpine repositories inside the container.
       # Example: "https://example-mirror.com/alpine"
-      MIRROR_URL: "https://mirror.krfoss.org/alpine"
+      MIRROR_URL: "https://mirror5.krfoss.org/alpine"
       # The default time zone is Asia/Seoul (GMT +9). Change it as needed.
       # TZ: "Asia/Seoul"
     volumes:
