@@ -270,6 +270,50 @@ func (s *Store) AdminDelete(id string) error {
 	return nil
 }
 
+func (s *Store) AdminDeleteAll() (int, error) {
+	entries, err := os.ReadDir(s.DataDir)
+	if err != nil {
+		return 0, err
+	}
+
+	deleted := 0
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+
+		id := strings.TrimSuffix(name, ".json")
+		if !validID(id) {
+			continue
+		}
+
+		unlock := s.locks.Lock(id)
+		path := s.path(id)
+
+		fileErr := os.Remove(path)
+		metaErr := os.Remove(metaPath(path))
+		unlock()
+
+		if fileErr != nil && !errors.Is(fileErr, os.ErrNotExist) {
+			return deleted, fileErr
+		}
+
+		if metaErr != nil && !errors.Is(metaErr, os.ErrNotExist) {
+			return deleted, metaErr
+		}
+
+		deleted++
+	}
+
+	return deleted, nil
+}
+
 func (s *Store) CleanupExpired() error {
 	entries, err := os.ReadDir(s.DataDir)
 	if err != nil {

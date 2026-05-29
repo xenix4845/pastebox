@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"bytes"
 	"errors"
 	"fmt"
@@ -31,7 +32,6 @@ type app struct {
 }
 
 const maxUploadSize int64 = 1 << 30 // 1 GiB
-const uploadSampleSize int64 = 64 << 10 // 64 KiB
 
 func main() {
 	listenAddr := getenv("LISTEN_ADDR", ":8080")
@@ -84,12 +84,12 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path == "/" {
 		switch r.Method {
-			case http.MethodGet:
-				a.indexHandler(w, r)
-			case http.MethodPost, http.MethodPut:
-				a.uploadHandler(w, r)
-			default:
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		case http.MethodGet:
+			a.indexHandler(w, r)
+		case http.MethodPost, http.MethodPut:
+			a.uploadHandler(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 		return
 	}
@@ -160,10 +160,6 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if r.MultipartForm != nil {
-			defer r.MultipartForm.RemoveAll()
-		}
-
 		file, header, err := r.FormFile("file")
 		if err != nil {
 			http.Error(w, "missing file field", http.StatusBadRequest)
@@ -194,17 +190,18 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reader, allowed, reason, err := prepareTextUploadReader(filename, contentType, reader)
+	content, err := io.ReadAll(io.LimitReader(reader, maxUploadSize+1))
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "request body too large") {
-			http.Error(w, "upload too large. maximum size is 1GB", http.StatusRequestEntityTooLarge)
-			return
-		}
-
 		http.Error(w, "failed to read upload", http.StatusBadRequest)
 		return
 	}
 
+	if int64(len(content)) > maxUploadSize {
+		http.Error(w, "upload too large. maximum size is 1GB", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	allowed, reason := allowTextUpload(filename, contentType, content)
 	if !allowed {
 		log.Printf("upload blocked: remote=%s filename=%q content_type=%q reason=%s", r.RemoteAddr, filename, contentType, reason)
 		http.Error(w, "unsupported file type. only text-based files are allowed", http.StatusUnsupportedMediaType)
@@ -219,14 +216,9 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	once := policy == "once"
 	customCode := strings.TrimSpace(r.Header.Get("code"))
 
-	meta, password, deleteToken, err := a.store.Create(reader, contentType, usePassword, permanent, once, customCode)
+	meta, password, deleteToken, err := a.store.Create(bytes.NewReader(content), contentType, usePassword, permanent, once, customCode)
 	if err != nil {
 		log.Printf("upload failed: %v", err)
-
-		if strings.Contains(strings.ToLower(err.Error()), "request body too large") {
-			http.Error(w, "upload too large. maximum size is 1GB", http.StatusRequestEntityTooLarge)
-			return
-		}
 
 		if errors.Is(err, pastebox.ErrInvalidCode) {
 			http.Error(w, "invalid code. use 1-10 characters: letters, numbers, underscore, or hyphen", http.StatusBadRequest)
@@ -244,13 +236,13 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf(
 		"created: id=%s remote=%s size=%d content_type=%q policy=%s expires=%s protected=%t",
-	    meta.ID,
-	    r.RemoteAddr,
-	    meta.Size,
-	    meta.ContentType,
-	    meta.DataPolicy,
-	    formatExpiresForLog(meta),
-		    password != "",
+		meta.ID,
+		r.RemoteAddr,
+		meta.Size,
+		meta.ContentType,
+		meta.DataPolicy,
+		formatExpiresForLog(meta),
+		password != "",
 	)
 
 	a.writeUploadResponse(w, r, meta, password, deleteToken)
@@ -350,14 +342,14 @@ func (a *app) cloneHandler(w http.ResponseWriter, r *http.Request, id string) {
 
 	log.Printf(
 		"cloned: source=%s id=%s remote=%s size=%d content_type=%q policy=%s expires=%s protected=%t",
-	    id,
-	    meta.ID,
-	    r.RemoteAddr,
-	    meta.Size,
-	    meta.ContentType,
-	    meta.DataPolicy,
-	    formatExpiresForLog(meta),
-		    newPassword != "",
+		id,
+		meta.ID,
+		r.RemoteAddr,
+		meta.Size,
+		meta.ContentType,
+		meta.DataPolicy,
+		formatExpiresForLog(meta),
+		newPassword != "",
 	)
 
 	a.writeCloneResponse(w, r, meta, newPassword, deleteToken)
@@ -419,8 +411,8 @@ func (a *app) viewHandler(w http.ResponseWriter, r *http.Request, id string) {
 		_ = a.paste.Execute(w, map[string]any{
 			"ID":       entry.Meta.ID,
 			"Content":  string(content),
-				    "Language": syntaxLanguage(entry.Meta.ContentType),
-				    "Password": password,
+			"Language": syntaxLanguage(entry.Meta.ContentType),
+			"Password": password,
 		})
 		return
 	}
@@ -475,20 +467,22 @@ func (a *app) notFoundHandler(w http.ResponseWriter, r *http.Request) {
 
 func (a *app) adminHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
-		case "/admin", "/admin/":
-			a.adminIndexHandler(w, r)
-		case "/admin/setup":
-			a.adminSetupHandler(w, r)
-		case "/admin/login":
-			a.adminLoginHandler(w, r)
-		case "/admin/logout":
-			a.adminLogoutHandler(w, r)
-		case "/admin/delete":
-			a.adminDeleteHandler(w, r)
-		case "/admin/uploads":
-			a.adminUploadsHandler(w, r)
-		default:
-			http.NotFound(w, r)
+	case "/admin", "/admin/":
+		a.adminIndexHandler(w, r)
+	case "/admin/setup":
+		a.adminSetupHandler(w, r)
+	case "/admin/login":
+		a.adminLoginHandler(w, r)
+	case "/admin/logout":
+		a.adminLogoutHandler(w, r)
+	case "/admin/delete":
+		a.adminDeleteHandler(w, r)
+	case "/admin/delete-all":
+		a.adminDeleteAllHandler(w, r)
+	case "/admin/uploads":
+		a.adminUploadsHandler(w, r)
+	default:
+		http.NotFound(w, r)
 	}
 }
 
@@ -525,12 +519,49 @@ func (a *app) adminIndexHandler(w http.ResponseWriter, r *http.Request) {
 		"Stats":           buildAdminStats(items),
 		"BaseURL":         requestBaseURL(r),
 		"UploadsDisabled": uploadsDisabled,
+		"Notice":          popAdminFlash(w, r),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := a.adminList.Execute(w, data); err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
+}
+
+const adminFlashCookieName = "pastebox_admin_flash"
+
+func setAdminFlash(w http.ResponseWriter, message string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminFlashCookieName,
+		Value:    base64.RawURLEncoding.EncodeToString([]byte(message)),
+		Path:     "/admin",
+		MaxAge:   60,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func popAdminFlash(w http.ResponseWriter, r *http.Request) string {
+	cookie, err := r.Cookie(adminFlashCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return ""
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminFlashCookieName,
+		Value:    "",
+		Path:     "/admin",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	message, err := base64.RawURLEncoding.DecodeString(cookie.Value)
+	if err != nil {
+		return ""
+	}
+
+	return string(message)
 }
 
 type adminStats struct {
@@ -739,6 +770,29 @@ func (a *app) adminUploadsHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
+func (a *app) adminDeleteAllHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAdmin(w, r) {
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	count, err := a.store.AdminDeleteAll()
+	if err != nil {
+		log.Printf("admin delete all failed: remote=%s deleted=%d err=%v", r.RemoteAddr, count, err)
+		http.Error(w, "delete all failed", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("admin deleted all pastes: count=%d remote=%s", count, r.RemoteAddr)
+
+	setAdminFlash(w, fmt.Sprintf("%d pastes have been deleted.", count))
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
 func (a *app) adminDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAdmin(w, r) {
 		return
@@ -762,6 +816,7 @@ func (a *app) adminDeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("admin deleted: id=%s remote=%s", id, r.RemoteAddr)
 
+	setAdminFlash(w, fmt.Sprintf("Paste %s has been deleted.", id))
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -803,20 +858,6 @@ func setAdminCookie(w http.ResponseWriter, token string) {
 	})
 }
 
-func prepareTextUploadReader(filename string, contentType string, reader io.Reader) (io.Reader, bool, string, error) {
-	sample, err := io.ReadAll(io.LimitReader(reader, uploadSampleSize))
-	if err != nil {
-		return nil, false, "", err
-	}
-
-	allowed, reason := allowTextUpload(filename, contentType, sample)
-	if !allowed {
-		return nil, false, reason, nil
-	}
-
-	return io.MultiReader(bytes.NewReader(sample), reader), true, "", nil
-}
-
 func allowTextUpload(filename string, contentType string, content []byte) (bool, string) {
 	ext := normalizedUploadExt(filename)
 	lowerContentType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
@@ -855,36 +896,36 @@ func normalizeTextContentType(filename string, contentType string) string {
 	lowerContentType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 
 	switch ext {
-		case ".log":
-			return "text/x-log; charset=utf-8"
-		case ".rs":
-			return "text/x-rust; charset=utf-8"
-		case ".go":
-			return "text/x-go; charset=utf-8"
-		case ".js", ".mjs", ".cjs":
-			return "application/javascript; charset=utf-8"
-		case ".py":
-			return "text/x-python; charset=utf-8"
-		case ".md", ".markdown":
-			return "text/markdown; charset=utf-8"
-		case ".ts", ".tsx":
-			return "text/typescript; charset=utf-8"
-		case ".php":
-			return "application/x-httpd-php; charset=utf-8"
-		case ".html", ".htm":
-			return "text/html; charset=utf-8"
-		case ".css":
-			return "text/css; charset=utf-8"
-		case ".csv", ".tsv":
-			return "text/csv; charset=utf-8"
-		case ".json", ".jsonl":
-			return "application/json; charset=utf-8"
-		case ".xml":
-			return "application/xml; charset=utf-8"
-		case ".yaml", ".yml":
-			return "application/yaml; charset=utf-8"
-		case ".sh", ".bash", ".zsh":
-			return "text/x-shellscript; charset=utf-8"
+	case ".log":
+		return "text/x-log; charset=utf-8"
+	case ".rs":
+		return "text/x-rust; charset=utf-8"
+	case ".go":
+		return "text/x-go; charset=utf-8"
+	case ".js", ".mjs", ".cjs":
+		return "application/javascript; charset=utf-8"
+	case ".py":
+		return "text/x-python; charset=utf-8"
+	case ".md", ".markdown":
+		return "text/markdown; charset=utf-8"
+	case ".ts", ".tsx":
+		return "text/typescript; charset=utf-8"
+	case ".php":
+		return "application/x-httpd-php; charset=utf-8"
+	case ".html", ".htm":
+		return "text/html; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".csv", ".tsv":
+		return "text/csv; charset=utf-8"
+	case ".json", ".jsonl":
+		return "application/json; charset=utf-8"
+	case ".xml":
+		return "application/xml; charset=utf-8"
+	case ".yaml", ".yml":
+		return "application/yaml; charset=utf-8"
+	case ".sh", ".bash", ".zsh":
+		return "text/x-shellscript; charset=utf-8"
 	}
 
 	if lowerContentType != "" && isTextContentType(lowerContentType) {
@@ -918,7 +959,7 @@ func normalizedUploadExt(filename string) string {
 
 func isKnownTextExtension(ext string) bool {
 	switch ext {
-		case "",
+	case "",
 		".txt", ".text", ".log", ".md", ".markdown", ".csv", ".tsv",
 		".json", ".jsonl", ".xml", ".yaml", ".yml", ".toml", ".ini", ".env",
 		".conf", ".cfg", ".properties", ".sql",
@@ -927,14 +968,14 @@ func isKnownTextExtension(ext string) bool {
 		".rs", ".swift", ".cs", ".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat",
 		".dockerfile", ".gitignore", ".gitattributes", ".editorconfig":
 		return true
-		default:
-			return false
+	default:
+		return false
 	}
 }
 
 func isBlockedUploadExtension(ext string) bool {
 	switch ext {
-		case ".png", ".jpg", ".jpeg", ".bmp", ".svg", ".gif", ".webp", ".ico", ".tif", ".tiff",
+	case ".png", ".jpg", ".jpeg", ".bmp", ".svg", ".gif", ".webp", ".ico", ".tif", ".tiff",
 		".mp4", ".mp3", ".mpv", ".mkv", ".mov", ".avi", ".wmv", ".flv", ".webm", ".m4v",
 		".wav", ".flac", ".aac", ".ogg", ".m4a",
 		".iso", ".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2",
@@ -942,8 +983,8 @@ func isBlockedUploadExtension(ext string) bool {
 		".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
 		".exe", ".dll", ".so", ".dylib", ".bin", ".img", ".apk", ".deb", ".rpm":
 		return true
-		default:
-			return false
+	default:
+		return false
 	}
 }
 
@@ -955,25 +996,25 @@ func isBlockedUploadContentType(contentType string) bool {
 	if strings.HasPrefix(contentType, "image/") ||
 		strings.HasPrefix(contentType, "video/") ||
 		strings.HasPrefix(contentType, "audio/") {
-			return true
-		}
+		return true
+	}
 
-		switch contentType {
-			case "application/zip",
-			"application/x-zip-compressed",
-			"application/x-tar",
-			"application/gzip",
-			"application/x-gzip",
-			"application/x-7z-compressed",
-			"application/vnd.rar",
-			"application/x-rar-compressed",
-			"application/x-iso9660-image",
-			"application/pdf",
-			"application/octet-stream":
-			return true
-			default:
-				return false
-		}
+	switch contentType {
+	case "application/zip",
+		"application/x-zip-compressed",
+		"application/x-tar",
+		"application/gzip",
+		"application/x-gzip",
+		"application/x-7z-compressed",
+		"application/vnd.rar",
+		"application/x-rar-compressed",
+		"application/x-iso9660-image",
+		"application/pdf",
+		"application/octet-stream":
+		return true
+	default:
+		return false
+	}
 }
 
 func isTextContentType(contentType string) bool {
@@ -993,38 +1034,38 @@ func isTextContentType(contentType string) bool {
 		strings.Contains(contentType, "ecmascript") ||
 		strings.Contains(contentType, "x-sh") ||
 		strings.Contains(contentType, "x-shellscript") {
-			return true
-		}
+		return true
+	}
 
-		return false
+	return false
 }
 
 func syntaxLanguage(contentType string) string {
 	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 
 	switch {
-		case strings.Contains(contentType, "x-log"):
-			return "logs"
-		case strings.Contains(contentType, "x-rust"):
-			return "rust"
-		case strings.Contains(contentType, "x-go"):
-			return "go"
-		case strings.Contains(contentType, "javascript"):
-			return "javascript"
-		case strings.Contains(contentType, "x-python"):
-			return "python"
-		case strings.Contains(contentType, "markdown"):
-			return "markdown"
-		case strings.Contains(contentType, "typescript"):
-			return "typescript"
-		case strings.Contains(contentType, "php"):
-			return "php"
-		case contentType == "text/html":
-			return "xml"
-		case contentType == "text/css":
-			return "css"
-		default:
-			return "plaintext"
+	case strings.Contains(contentType, "x-log"):
+		return "logs"
+	case strings.Contains(contentType, "x-rust"):
+		return "rust"
+	case strings.Contains(contentType, "x-go"):
+		return "go"
+	case strings.Contains(contentType, "javascript"):
+		return "javascript"
+	case strings.Contains(contentType, "x-python"):
+		return "python"
+	case strings.Contains(contentType, "markdown"):
+		return "markdown"
+	case strings.Contains(contentType, "typescript"):
+		return "typescript"
+	case strings.Contains(contentType, "php"):
+		return "php"
+	case contentType == "text/html":
+		return "xml"
+	case contentType == "text/css":
+		return "css"
+	default:
+		return "plaintext"
 	}
 }
 
@@ -1049,16 +1090,16 @@ func isTextEntry(entry *pastebox.Entry) bool {
 		strings.Contains(contentType, "yaml") ||
 		strings.Contains(contentType, "javascript") ||
 		strings.Contains(contentType, "x-sh") {
-			return true
-		}
+		return true
+	}
 
-		pos, _ := entry.File.Seek(0, io.SeekCurrent)
+	pos, _ := entry.File.Seek(0, io.SeekCurrent)
 
-		buf := make([]byte, 4096)
-		n, _ := entry.File.Read(buf)
-		_, _ = entry.File.Seek(pos, io.SeekStart)
+	buf := make([]byte, 4096)
+	n, _ := entry.File.Read(buf)
+	_, _ = entry.File.Seek(pos, io.SeekStart)
 
-		return looksLikeText(buf[:n])
+	return looksLikeText(buf[:n])
 }
 
 func looksLikeText(buf []byte) bool {
