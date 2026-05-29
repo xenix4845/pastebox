@@ -6,6 +6,7 @@ on:
       - main
     paths-ignore:
       - ".github/workflows/main.yml"
+      - "**/LICENSE"
       - "**/*.md"
       - "**/*.jpg"
       - "**/*.jpeg"
