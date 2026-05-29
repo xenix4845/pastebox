@@ -839,11 +839,17 @@ func (a *app) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 func (a *app) renderAdminForm(w http.ResponseWriter, title string, action string, errorMessage string, button string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
+	description := "Sign in with the administrator account to manage stored pastes."
+	if action == "/admin/setup" {
+		description = "The first account becomes the only administrator account."
+	}
+
 	_ = a.adminForm.Execute(w, map[string]any{
-		"Title": title,
-		"Action": action,
-		"Error": errorMessage,
-		"Button": button,
+		"Title":       title,
+		"Action":      action,
+		"Error":       errorMessage,
+		"Button":      button,
+		"Description": description,
 	})
 }
 
