@@ -5,6 +5,13 @@ DATA_DIR="${DATA_DIR:-/paste-data}"
 APP_USER="${APP_USER:-pastebox}"
 APP_GROUP="${APP_GROUP:-pastebox}"
 
+if [ -n "${MIRROR_URL:-}" ]; then
+  printf '%s\n' \
+    "${MIRROR_URL%/}/v3.23/main" \
+    "${MIRROR_URL%/}/v3.23/community" \
+    > /etc/apk/repositories
+fi
+
 mkdir -p "$DATA_DIR"
 
 # Bind mounts inherit host-side ownership. Make the directory writable before
