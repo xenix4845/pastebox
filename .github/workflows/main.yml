@@ -5,8 +5,11 @@ on:
     branches:
       - main
     paths-ignore:
+      - ".github/workflows/main.yml"
       - "**/*.md"
-      - "LICENSE"
+      - "**/*.jpg"
+      - "**/*.jpeg"
+      - "**/*.png"
   workflow_dispatch:
 
 jobs:
