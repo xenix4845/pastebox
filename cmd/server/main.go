@@ -216,7 +216,7 @@ func (a *app) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	once := policy == "once"
 	customCode := strings.TrimSpace(r.Header.Get("code"))
 
-	meta, password, deleteToken, err := a.store.Create(bytes.NewReader(content), contentType, usePassword, permanent, once, customCode)
+	meta, password, deleteToken, err := a.store.Create(bytes.NewReader(content), filename, contentType, usePassword, permanent, once, customCode)
 	if err != nil {
 		log.Printf("upload failed: %v", err)
 
@@ -410,6 +410,7 @@ func (a *app) viewHandler(w http.ResponseWriter, r *http.Request, id string) {
 
 		_ = a.paste.Execute(w, map[string]any{
 			"ID":       entry.Meta.ID,
+			"Filename": entry.Meta.Filename,
 			"Content":  string(content),
 			"Language": syntaxLanguage(entry.Meta.ContentType),
 			"Password": password,

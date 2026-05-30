@@ -36,6 +36,7 @@ type Store struct {
 
 type Metadata struct {
 	ID              string    `json:"id"`
+	Filename        string    `json:"filename,omitempty"`
 	PasswordHash    string    `json:"password_hash,omitempty"`
 	DeleteTokenHash string    `json:"delete_token_hash,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -52,6 +53,7 @@ type Entry struct {
 
 type AdminPasteItem struct {
 	ID          string
+	Filename    string
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
 	DataPolicy  string
@@ -78,8 +80,8 @@ func NewStore(dataDir string, ttl time.Duration) (*Store, error) {
 	}, nil
 }
 
-func (s *Store) Create(r io.Reader, contentType string, usePassword bool, permanent bool, once bool, customCode string) (Metadata, string, string, error) {
-	return s.createFromReader(r, contentType, usePassword, permanent, once, customCode)
+func (s *Store) Create(r io.Reader, filename string, contentType string, usePassword bool, permanent bool, once bool, customCode string) (Metadata, string, string, error) {
+	return s.createFromReader(r, filename, contentType, usePassword, permanent, once, customCode)
 }
 
 func (s *Store) Clone(id string, password string, usePassword bool, permanent bool, once bool, customCode string) (Metadata, string, string, error) {
@@ -89,10 +91,10 @@ func (s *Store) Clone(id string, password string, usePassword bool, permanent bo
 	}
 	defer entry.File.Close()
 
-	return s.createFromReader(entry.File, entry.Meta.ContentType, usePassword, permanent, once, customCode)
+	return s.createFromReader(entry.File, entry.Meta.Filename, entry.Meta.ContentType, usePassword, permanent, once, customCode)
 }
 
-func (s *Store) createFromReader(r io.Reader, contentType string, usePassword bool, permanent bool, once bool, customCode string) (Metadata, string, string, error) {
+func (s *Store) createFromReader(r io.Reader, filename string, contentType string, usePassword bool, permanent bool, once bool, customCode string) (Metadata, string, string, error) {
 	id, path, err := s.reservePath(customCode)
 	if err != nil {
 		return Metadata{}, "", "", err
@@ -149,6 +151,7 @@ func (s *Store) createFromReader(r io.Reader, contentType string, usePassword bo
 
 	meta := Metadata{
 		ID:              id,
+		Filename:        strings.TrimSpace(filename),
 		PasswordHash:    passwordHash,
 		DeleteTokenHash: hashSecret(deleteToken),
 		CreatedAt:       now,
@@ -385,6 +388,7 @@ func (s *Store) ListPastes() ([]AdminPasteItem, error) {
 
 		items = append(items, AdminPasteItem{
 			ID:          meta.ID,
+			Filename:    meta.Filename,
 			CreatedAt:   meta.CreatedAt,
 			ExpiresAt:   meta.ExpiresAt,
 			DataPolicy:  meta.DataPolicy,

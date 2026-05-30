@@ -107,6 +107,7 @@
           <thead class="bg-black/30 text-left text-xs uppercase tracking-wider text-zinc-500">
             <tr>
               <th class="px-4 py-3">Code</th>
+              <th class="px-4 py-3">Filename</th>
               <th class="px-4 py-3">Policy</th>
               <th class="px-4 py-3">Size</th>
               <th class="px-4 py-3">Protected</th>
@@ -121,6 +122,7 @@
               <td class="whitespace-nowrap px-4 py-3">
                 <a class="font-mono text-zinc-100 underline decoration-zinc-700 underline-offset-4 hover:decoration-zinc-100" href="{{ $.BaseURL }}/{{ .ID }}" target="_blank">{{ .ID }}</a>
               </td>
+              <td class="max-w-xs truncate whitespace-nowrap px-4 py-3 text-zinc-300">{{ if .Filename }}{{ .Filename }}{{ else }}-{{ end }}</td>
               <td class="whitespace-nowrap px-4 py-3 text-zinc-300">{{ .DataPolicy }}</td>
               <td class="whitespace-nowrap px-4 py-3 text-zinc-300">{{ .Size }}</td>
               <td class="whitespace-nowrap px-4 py-3 text-zinc-300">{{ .Protected }}</td>
@@ -135,7 +137,7 @@
             </tr>
             {{ else }}
             <tr>
-              <td class="px-4 py-8 text-center text-zinc-500" colspan="7">No pastes found.</td>
+              <td class="px-4 py-8 text-center text-zinc-500" colspan="8">No pastes found.</td>
             </tr>
             {{ end }}
           </tbody>
