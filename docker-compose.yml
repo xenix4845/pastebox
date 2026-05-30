@@ -9,5 +9,6 @@ services:
     # NOTE: The default time zone is Asia/Seoul (GMT +9). Change it as needed.
     #environment:
     #  TZ: "Asia/Seoul"
+    LANGUAGE: "en" # value: ko/en
     volumes:
       - ./data:/paste-data

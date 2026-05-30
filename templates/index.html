@@ -1,66 +1,45 @@
 <!doctype html>
-<html lang="ko">
+<html lang="{{ t "_lang" }}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Pastebox</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = { darkMode: 'class' }
   </script>
 </head>
 <body class="dark min-h-screen bg-[#111111] text-zinc-100">
   <main class="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-12">
-    <section class="rounded-2xl border border-white/10 bg-[#151515]/80 p-8 shadow-xl transition-all duration-300 ease-out hover:border-white/20 hover:bg-[#161616]/90 hover:shadow-[0_0_28px_rgba(255,255,255,0.06)]">
+    <section class="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-8 shadow-2xl">
       <div class="mb-8">
-        <p class="mb-3 inline-flex rounded-full border border-zinc-800 px-3 py-1 text-xs text-zinc-400">curl-based file sharing</p>
+        <p class="mb-3 inline-flex rounded-full border border-zinc-800 px-3 py-1 text-xs text-zinc-400">{{ t "index_badge" }}</p>
         <h1 class="text-4xl font-bold tracking-tight">Pastebox</h1>
-        <p class="mt-3 text-zinc-400">When you upload a file or text using curl, a 5-digit random URL is generated. The link will be automatically deleted after 30 days.</p>
-        <p class="mt-2 text-sm text-zinc-500">Only text-based files are allowed. Images, media files, archives, and binary files are blocked.</p>
+        <p class="mt-3 text-zinc-400">{{ t "index_description" }}</p>
       </div>
 
       <div class="space-y-4">
         <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
-          <p class="mb-2 text-sm text-zinc-400">Text Upload</p>
+          <p class="mb-2 text-sm text-zinc-400">{{ t "index_text_upload" }}</p>
           <pre class="overflow-x-auto text-sm"><code>echo "hello" | curl -X POST --data-binary @- {{ .BaseURL }}/</code></pre>
         </div>
         <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
-          <p class="mb-2 text-sm text-zinc-400">File Upload</p>
+          <p class="mb-2 text-sm text-zinc-400">{{ t "index_file_upload" }}</p>
           <pre class="overflow-x-auto text-sm"><code>curl -F "file=@test.txt" {{ .BaseURL }}/</code></pre>
         </div>
         <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
-          <p class="mb-2 text-sm text-zinc-400">Password-protected Links</p>
+          <p class="mb-2 text-sm text-zinc-400">{{ t "index_password_links" }}</p>
           <pre class="overflow-x-auto text-sm"><code>curl -H "usepassword: true" -F "file=@secret.txt" {{ .BaseURL }}/</code></pre>
         </div>
         <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
-          <p class="mb-2 text-sm text-zinc-400">Data policy</p>
-          <p class="mb-3 text-sm text-zinc-500">
-            Use <code>data-policy: permanent</code> to keep a paste permanently, or <code>data-policy: once</code> to delete it immediately after the first successful view.
-          </p>
-          <pre class="overflow-x-auto text-sm"><code># Permanent paste
-curl -H "data-policy: permanent" -F "file=@server-logs.log" {{ .BaseURL }}/
-
-# One-time paste
-curl -H "data-policy: once" -F "file=@secret.txt" {{ .BaseURL }}/</code></pre>
-        </div>
-        <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
-          <p class="mb-2 text-sm text-zinc-400">Expiration information</p>
-          <p class="mb-3 text-sm text-zinc-500">Temporary uploads include an expiration date in the upload response. Permanent uploads do not include an expiration date, and one-time uploads are deleted after the first successful view.</p>
-          <pre class="overflow-x-auto text-sm"><code>url: {{ .BaseURL }}/AbC12
-expires: 2026-06-24T05:10:26Z
-delete: {{ .BaseURL }}/AbC12?delete=DELETE_TOKEN</code></pre>
-        </div>
-        <div class="rounded-xl bg-black/40 p-4 ring-1 ring-zinc-800">
-          <p class="mb-2 text-sm text-zinc-400">Manual deletion</p>
-          <p class="mb-3 text-sm text-zinc-500">Each upload returns a delete URL. Open the URL or request it with curl to remove the uploaded content manually.</p>
-          <pre class="overflow-x-auto text-sm"><code>curl "{{ .BaseURL }}/AbC12?delete=DELETE_TOKEN"</code></pre>
+          <p class="mb-2 text-sm text-zinc-400">{{ t "index_permanent" }}</p>
+          <pre class="overflow-x-auto text-sm"><code>curl -H "data-policy: permanent" -F "file=@server-logs.log" {{ .BaseURL }}/</code></pre>
         </div>
       </div>
 
       <div class="mt-8 flex flex-wrap gap-3">
-        <a class="rounded-xl bg-zinc-100 px-4 py-2 font-semibold text-zinc-950 transition hover:bg-white" href="/">Home</a>
-        <a class="rounded-xl border border-zinc-700 px-4 py-2 text-zinc-300 transition hover:border-zinc-500 hover:text-white" href="https://github.com/kmw0410/pastebox" target="_blank" rel="noopener noreferrer">GitHub</a>
-        <button class="rounded-xl border border-zinc-700 px-4 py-2 text-zinc-300 transition hover:border-zinc-500 hover:text-white" onclick="navigator.clipboard.writeText('curl -F &quot;file=@test.txt&quot; {{ .BaseURL }}/')">Copy curl example</button>
+        <a class="rounded-xl bg-zinc-100 px-4 py-2 font-semibold text-zinc-950 transition hover:bg-white" href="/">{{ t "home" }}</a>
+        <button class="rounded-xl border border-zinc-700 px-4 py-2 text-zinc-300 transition hover:border-zinc-500 hover:text-white" onclick="navigator.clipboard.writeText('curl -F &quot;file=@test.txt&quot; {{ .BaseURL }}/')">{{ t "index_copy_curl" }}</button>
       </div>
     </section>
   </main>

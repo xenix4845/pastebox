@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"encoding/base64"
 	"bytes"
 	"errors"
@@ -29,6 +30,7 @@ type app struct {
 	passwordPage *template.Template
 	notFoundPage *template.Template
 	cloneResult  *template.Template
+	i18n         *localizer
 }
 
 const maxUploadSize int64 = 1 << 30 // 1 GiB
@@ -37,6 +39,7 @@ func main() {
 	listenAddr := getenv("LISTEN_ADDR", ":8080")
 	dataDir := getenv("DATA_DIR", "/paste-data")
 	expireDays := getenvInt("EXPIRE_DAYS", 30)
+	i18n := loadLocalizer(getenv("LANGUAGE", "en"))
 
 	store, err := pastebox.NewStore(dataDir, time.Duration(expireDays)*24*time.Hour)
 	if err != nil {
@@ -45,13 +48,14 @@ func main() {
 
 	a := &app{
 		store:        store,
-		index:        mustParseTemplate("templates/index.html"),
-		paste:        mustParseTemplate("templates/paste.html"),
-		adminForm:    mustParseTemplate("templates/admin_form.html"),
-		adminList:    mustParseTemplate("templates/admin_list.html"),
-		passwordPage: mustParseTemplate("templates/password.html"),
-		notFoundPage: mustParseTemplate("templates/404.html"),
-		cloneResult:  mustParseTemplate("templates/clone.html"),
+		index:        mustParseTemplate(i18n, "templates/index.html"),
+		paste:        mustParseTemplate(i18n, "templates/paste.html"),
+		adminForm:    mustParseTemplate(i18n, "templates/admin_form.html"),
+		adminList:    mustParseTemplate(i18n, "templates/admin_list.html"),
+		passwordPage: mustParseTemplate(i18n, "templates/password.html"),
+		notFoundPage: mustParseTemplate(i18n, "templates/404.html"),
+		cloneResult:  mustParseTemplate(i18n, "templates/clone.html"),
+		i18n:         i18n,
 	}
 
 	go func() {
@@ -638,7 +642,7 @@ func (a *app) adminSetupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
-		a.renderAdminForm(w, "Create admin", "/admin/setup", "", "Create")
+		a.renderAdminForm(w, a.i18n.T("admin_setup_title"), "/admin/setup", "", a.i18n.T("admin_create_button"))
 		return
 	}
 
@@ -648,7 +652,7 @@ func (a *app) adminSetupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		a.renderAdminForm(w, "Create admin", "/admin/setup", "Invalid form", "Create")
+		a.renderAdminForm(w, a.i18n.T("admin_setup_title"), "/admin/setup", a.i18n.T("admin_error_invalid_form"), a.i18n.T("admin_create_button"))
 		return
 	}
 
@@ -656,7 +660,7 @@ func (a *app) adminSetupHandler(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 
 	if err := a.store.CreateAdmin(username, password); err != nil {
-		a.renderAdminForm(w, "Create admin", "/admin/setup", err.Error(), "Create")
+		a.renderAdminForm(w, a.i18n.T("admin_setup_title"), "/admin/setup", err.Error(), a.i18n.T("admin_create_button"))
 		return
 	}
 
@@ -685,7 +689,7 @@ func (a *app) adminLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
-		a.renderAdminForm(w, "Admin login", "/admin/login", "", "Login")
+		a.renderAdminForm(w, a.i18n.T("admin_login_title"), "/admin/login", "", a.i18n.T("admin_login_button"))
 		return
 	}
 
@@ -695,7 +699,7 @@ func (a *app) adminLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		a.renderAdminForm(w, "Admin login", "/admin/login", "Invalid form", "Login")
+		a.renderAdminForm(w, a.i18n.T("admin_login_title"), "/admin/login", a.i18n.T("admin_error_invalid_form"), a.i18n.T("admin_login_button"))
 		return
 	}
 
@@ -710,7 +714,7 @@ func (a *app) adminLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !ok {
 		log.Printf("admin login failed: username=%s remote=%s", username, r.RemoteAddr)
-		a.renderAdminForm(w, "Admin login", "/admin/login", "Invalid username or password", "Login")
+		a.renderAdminForm(w, a.i18n.T("admin_login_title"), "/admin/login", a.i18n.T("admin_error_invalid_credentials"), a.i18n.T("admin_login_button"))
 		return
 	}
 
@@ -790,7 +794,7 @@ func (a *app) adminDeleteAllHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("admin deleted all pastes: count=%d remote=%s", count, r.RemoteAddr)
 
-	setAdminFlash(w, fmt.Sprintf("%d pastes have been deleted.", count))
+	setAdminFlash(w, fmt.Sprintf(a.i18n.T("admin_flash_delete_all"), count))
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -817,7 +821,7 @@ func (a *app) adminDeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("admin deleted: id=%s remote=%s", id, r.RemoteAddr)
 
-	setAdminFlash(w, fmt.Sprintf("Paste %s has been deleted.", id))
+	setAdminFlash(w, fmt.Sprintf(a.i18n.T("admin_flash_delete_one"), id))
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -840,9 +844,9 @@ func (a *app) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 func (a *app) renderAdminForm(w http.ResponseWriter, title string, action string, errorMessage string, button string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	description := "Sign in with the administrator account to manage stored pastes."
+	description := a.i18n.T("admin_login_description")
 	if action == "/admin/setup" {
-		description = "The first account becomes the only administrator account."
+		description = a.i18n.T("admin_setup_description")
 	}
 
 	_ = a.adminForm.Execute(w, map[string]any{
@@ -1178,8 +1182,83 @@ func formatExpiresForLog(meta pastebox.Metadata) string {
 	return meta.ExpiresAt.Format(time.RFC3339)
 }
 
-func mustParseTemplate(path string) *template.Template {
-	tpl, err := template.ParseFiles(path)
+type localizer struct {
+	language string
+	messages map[string]string
+}
+
+func loadLocalizer(language string) *localizer {
+	language = normalizeLanguage(language)
+
+	messages := map[string]string{}
+	loadMessages(messages, "locales/en.json", false)
+
+	if language != "en" {
+		loadMessages(messages, "locales/"+language+".json", true)
+	}
+
+	return &localizer{
+		language: language,
+		messages: messages,
+	}
+}
+
+func normalizeLanguage(language string) string {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "ko", "en":
+		return strings.ToLower(strings.TrimSpace(language))
+	default:
+		return "en"
+	}
+}
+
+func loadMessages(messages map[string]string, path string, optional bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if optional {
+			log.Printf("translation file not loaded: %s: %v", path, err)
+			return
+		}
+
+		log.Fatalf("failed to read translation file %s: %v", path, err)
+	}
+
+	var loaded map[string]string
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		if optional {
+			log.Printf("translation file not parsed: %s: %v", path, err)
+			return
+		}
+
+		log.Fatalf("failed to parse translation file %s: %v", path, err)
+	}
+
+	for key, value := range loaded {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+
+		messages[key] = value
+	}
+}
+
+func (l *localizer) T(key string) string {
+	if l == nil {
+		return key
+	}
+
+	if value := strings.TrimSpace(l.messages[key]); value != "" {
+		return value
+	}
+
+	return key
+}
+
+func mustParseTemplate(i18n *localizer, path string) *template.Template {
+	tpl, err := template.New(filepath.Base(path)).Funcs(template.FuncMap{
+		"t": i18n.T,
+	}).ParseFiles(path)
 	if err != nil {
 		log.Fatalf("failed to parse template %s: %v", path, err)
 	}
